@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from antang_api.models import GraphEdge, User
+from antang_api.routers.health_profile import get_case_graph
 from antang_api.psychosocial.graphs import (
     add_edge,
     add_node,
@@ -231,3 +232,53 @@ async def test_deleting_a_node_takes_its_edges_with_it(
     )
     assert remaining == 0
     assert await delete_node(db_session, user_id=user.id, node_id=thought.id) is False
+
+
+@pytest.mark.asyncio
+async def test_the_read_only_view_lists_what_he_said(db_session: AsyncSession) -> None:
+    """心理页的只读视图：节点带中文标签，边带关系名字，看不到内部 id 以外的字段。"""
+
+    user = await create_user(db_session, "g_view")
+    thought = await add_node(
+        db_session,
+        user_id=user.id,
+        layer="cognitive",
+        kind="thought",
+        text="我一到晚上就害怕",
+    )
+    fear = await add_node(
+        db_session,
+        user_id=user.id,
+        layer="affective",
+        kind="emotion",
+        text="心里发紧",
+        intensity=3,
+    )
+    await add_edge(
+        db_session,
+        user_id=user.id,
+        from_node_id=thought.id,
+        to_node_id=fear.id,
+        relation="triggers",
+        note="因为怕夜里低血糖",
+    )
+
+    response = await get_case_graph(user=user, session=db_session)
+
+    assert [node.kind_label for node in response.nodes] == ["念头", "情绪"]
+    assert [node.text for node in response.nodes] == ["我一到晚上就害怕", "心里发紧"]
+    assert response.nodes[1].intensity == 3
+    assert len(response.edges) == 1
+    assert response.edges[0].relation_label == "触发"
+    assert response.edges[0].note == "因为怕夜里低血糖"
+
+
+@pytest.mark.asyncio
+async def test_the_read_only_view_is_empty_before_he_says_anything(
+    db_session: AsyncSession,
+) -> None:
+    user = await create_user(db_session, "g_empty")
+    response = await get_case_graph(user=user, session=db_session)
+
+    assert response.nodes == []
+    assert response.edges == []

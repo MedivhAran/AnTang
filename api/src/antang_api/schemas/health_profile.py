@@ -730,3 +730,29 @@ class FearSummaryResponse(BaseModel):
         "unknown",
     ]
     discrepancy_note: str
+
+
+class CaseGraphNodeResponse(BaseModel):
+    """一个念头或一段情绪。患者在自己的心理页里能看，改了要他自己说。"""
+
+    id: UUID
+    layer: Literal["cognitive", "affective"]
+    kind: str
+    kind_label: str
+    text: str
+    intensity: int | None
+
+
+class CaseGraphEdgeResponse(BaseModel):
+    """两条节点之间他亲口说过的因果。"""
+
+    from_node_id: UUID
+    to_node_id: UUID
+    relation: str
+    relation_label: str
+    note: str | None
+
+
+class CaseGraphResponse(BaseModel):
+    nodes: list[CaseGraphNodeResponse]
+    edges: list[CaseGraphEdgeResponse]

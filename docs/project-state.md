@@ -688,3 +688,5 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 测试 `api/tests/test_case_graph_tools.py` 5 例：念头与情绪各落各层且 `source_message_id` 指到本轮消息、念头带强度被拒且一条都没写、按他说的因果连成 `triggers`、别人的节点连不上、三个工具名不变。`test_case_graphs.py` 7 例仍过；`ruff`、`pyright` 干净。
 
 - 跟着上下文走（同一节续）：`render_case_graph_context()` 把最近 `CASE_GRAPH_CONTEXT_LIMIT = 12` 条念头/情绪排成一段「[他之前说过的念头和情绪]」，写清「只用来把话接住，不要念给他听、不要当成诊断结论、他没提起时别说『你上次说过』」；`chat.py` 每轮用 `graph_snapshot()` 读出来塞进 `render_core_system_prompt(case_graph_context=...)`，没记过就是空串、完全不会出现空段落。测试 `api/tests/test_case_graph_context.py` 三例（没记过不出现、只放最近 12 条、禁念给他的措辞在）。
+
+- 只读视图（同一节续）：`GET /health-profile/case-graph` 返回 `CaseGraphResponse{nodes, edges}`，节点带 `kind_label`（念头/情绪…）、边带 `relation_label`（触发/引出…）。**只有 GET**——节点是他原话说出来的，改和删都得他再说一次，所以接口不提供写入，界面也不给「编辑」按钮。测试 `test_case_graphs.py` 两例：有念头+情绪+一条触发边时标签与强度都对、什么都没说时两个列表都是空的。

@@ -88,6 +88,11 @@ from antang_api.health_profile.wearable_service import (
     read_wearable_observations,
 )
 from antang_api.proactive_care.service import record_health_import
+from antang_api.psychosocial.graphs import (
+    KIND_LABELS,
+    RELATION_LABELS,
+    graph_snapshot,
+)
 from antang_api.psychosocial import (
     WHO5_INSTRUMENT,
     Instrument,
@@ -116,6 +121,9 @@ from antang_api.schemas.health_profile import (
     BehaviorLogResponse,
     BeliefEventResponse,
     BeliefNodeResponse,
+    CaseGraphEdgeResponse,
+    CaseGraphNodeResponse,
+    CaseGraphResponse,
     FearSummaryResponse,
     HealthProfileChangeRequest,
     HealthProfileChangeResponse,
@@ -1248,3 +1256,45 @@ async def export_patient_data(
             "Cache-Control": "no-store",
         },
     )
+
+
+@router.get("/case-graph", response_model=CaseGraphResponse)
+async def get_case_graph(
+    user: Annotated[User, Depends(get_patient_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CaseGraphResponse:
+    """患者自己那张认知图与情绪图的只读视图。
+
+    这里只读：节点是他原话说出来的，改、删都要他再说一次，
+    所以这个接口不提供写入，界面也不给「编辑」。
+    """
+
+    snapshot = await graph_snapshot(session, user_id=user.id)
+    raw_nodes = snapshot.get("nodes")
+    raw_edges = snapshot.get("edges")
+    nodes = [
+        CaseGraphNodeResponse(
+            id=UUID(str(node["id"])),
+            layer=node["layer"],
+            kind=str(node["kind"]),
+            kind_label=KIND_LABELS.get(str(node["kind"]), str(node["kind"])),
+            text=str(node["text"]),
+            intensity=node.get("intensity"),
+        )
+        for node in (raw_nodes if isinstance(raw_nodes, list) else [])
+        if isinstance(node, dict)
+    ]
+    edges = [
+        CaseGraphEdgeResponse(
+            from_node_id=UUID(str(edge["from"])),
+            to_node_id=UUID(str(edge["to"])),
+            relation=str(edge["relation"]),
+            relation_label=RELATION_LABELS.get(
+                str(edge["relation"]), str(edge["relation"])
+            ),
+            note=edge.get("note"),
+        )
+        for edge in (raw_edges if isinstance(raw_edges, list) else [])
+        if isinstance(edge, dict)
+    ]
+    return CaseGraphResponse(nodes=nodes, edges=edges)
