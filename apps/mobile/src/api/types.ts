@@ -2659,3 +2659,53 @@ export function parseGlucoseReports(value: unknown): GlucoseReport[] {
   if (!Array.isArray(items)) return [];
   return items.map(parseGlucoseReport);
 }
+
+export type CaseGraphNode = {
+  id: string;
+  layer: 'cognitive' | 'affective';
+  kindLabel: string;
+  text: string;
+  intensity: number | null;
+};
+
+export type CaseGraphEdge = {
+  fromNodeId: string;
+  toNodeId: string;
+  relationLabel: string;
+  note: string | null;
+};
+
+export type CaseGraph = {
+  nodes: CaseGraphNode[];
+  edges: CaseGraphEdge[];
+};
+
+/**
+ * 服务端会给中文标签；读不到的字段退回空串，让界面少一行而不是整页报错。
+ */
+export function parseCaseGraph(value: unknown): CaseGraph {
+  const data = objectValue(value, 'case graph');
+  const rawNodes = Array.isArray(data.nodes) ? data.nodes : [];
+  const rawEdges = Array.isArray(data.edges) ? data.edges : [];
+  return {
+    nodes: rawNodes.map((item) => {
+      const node = objectValue(item, 'case graph node');
+      return {
+        id: String(node.id ?? ''),
+        layer: node.layer === 'affective' ? 'affective' : 'cognitive',
+        kindLabel: String(node.kind_label ?? ''),
+        text: String(node.text ?? ''),
+        intensity: typeof node.intensity === 'number' ? node.intensity : null,
+      };
+    }),
+    edges: rawEdges.map((item) => {
+      const edge = objectValue(item, 'case graph edge');
+      return {
+        fromNodeId: String(edge.from_node_id ?? ''),
+        toNodeId: String(edge.to_node_id ?? ''),
+        relationLabel: String(edge.relation_label ?? ''),
+        note: typeof edge.note === 'string' ? edge.note : null,
+      };
+    }),
+  };
+}

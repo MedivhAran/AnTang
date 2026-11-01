@@ -46,6 +46,8 @@ import {
   type ApplicationStatus,
   type RegistrationOptions,
   type PsychosocialProfile,
+  type CaseGraph,
+  parseCaseGraph,
   parsePsychosocialProfile,
   type PsychosocialAssessmentInput,
   type PsychosocialInstrument,
@@ -1152,6 +1154,14 @@ export class ApiClient {
     );
     if (!response.ok) throw await this.apiError(response);
     return parsePsychosocialProfile(await responseJson(response));
+  }
+
+  async getCaseGraph(): Promise<CaseGraph> {
+    const response = await this.authorizedFetch(
+      '/api/v1/health-profile/case-graph',
+    );
+    if (!response.ok) throw await this.apiError(response);
+    return parseCaseGraph(await responseJson(response));
   }
 
   async recordPsychosocialAssessment(

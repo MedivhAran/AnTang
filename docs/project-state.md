@@ -690,3 +690,4 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 跟着上下文走（同一节续）：`render_case_graph_context()` 把最近 `CASE_GRAPH_CONTEXT_LIMIT = 12` 条念头/情绪排成一段「[他之前说过的念头和情绪]」，写清「只用来把话接住，不要念给他听、不要当成诊断结论、他没提起时别说『你上次说过』」；`chat.py` 每轮用 `graph_snapshot()` 读出来塞进 `render_core_system_prompt(case_graph_context=...)`，没记过就是空串、完全不会出现空段落。测试 `api/tests/test_case_graph_context.py` 三例（没记过不出现、只放最近 12 条、禁念给他的措辞在）。
 
 - 只读视图（同一节续）：`GET /health-profile/case-graph` 返回 `CaseGraphResponse{nodes, edges}`，节点带 `kind_label`（念头/情绪…）、边带 `relation_label`（触发/引出…）。**只有 GET**——节点是他原话说出来的，改和删都得他再说一次，所以接口不提供写入，界面也不给「编辑」按钮。测试 `test_case_graphs.py` 两例：有念头+情绪+一条触发边时标签与强度都对、什么都没说时两个列表都是空的。
+- 手机端只读卡（同一节续）：pps/mobile/src/psychosocial/CaseGraphSection.tsx 放在「心理」页最上面，标题「你和我说过的话」，一句「这里只读……要改，在对话里再说一次就行」；每条按层标「念头 / 情绪和身体」并带中文 kindLabel，情绪才显示「（强度 N/5）」；有边时底下列「A → 触发 → B」。测试 CaseGraphSection.test.tsx 四例（空态、强度只挂在情绪上、边两端是原话、只读文案在）。
