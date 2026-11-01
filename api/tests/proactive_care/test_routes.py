@@ -143,6 +143,47 @@ async def test_the_patient_can_choose_how_often_we_may_check_in(
         assert refused.status_code == 422
 
 
+async def test_the_patient_can_choose_which_hour_the_check_in_arrives(
+    client: AsyncClient,
+) -> None:
+    auth = await register(client, "care_settings_hour")
+    body = {
+        "routine_cadence": "daily",
+        "plan_follow_up_enabled": True,
+        "health_events_enabled": False,
+        "timezone": "Asia/Shanghai",
+        "quiet_hours_start": "22:00",
+        "quiet_hours_end": "08:00",
+        "health_notification_preview_enabled": False,
+    }
+
+    saved = await client.put(
+        "/api/v1/proactive-care/settings",
+        headers=auth_headers(auth),
+        json={**body, "check_in_hour": 9},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["check_in_hour"] == 9
+
+    # 交回去（null）就恢复滚动时间。
+    hand_back = await client.put(
+        "/api/v1/proactive-care/settings",
+        headers=auth_headers(auth),
+        json={**body, "check_in_hour": None},
+    )
+    assert hand_back.status_code == 200
+    assert hand_back.json()["check_in_hour"] is None
+
+    # 只有 0–23 的整点说得通。
+    for nonsense in (-1, 24):
+        refused = await client.put(
+            "/api/v1/proactive-care/settings",
+            headers=auth_headers(auth),
+            json={**body, "check_in_hour": nonsense},
+        )
+        assert refused.status_code == 422
+
+
 async def test_care_settings_put_replaces_every_setting_atomically(
     client: AsyncClient,
     db_session: AsyncSession,

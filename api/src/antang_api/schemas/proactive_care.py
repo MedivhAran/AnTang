@@ -52,6 +52,8 @@ class ProactiveCareSettingsPayload(BaseModel):
     # 上限：非空就是患者自己定的（PUT 时传 null 表示「跟着评估走」）。
     weekly_contact_limit: int | None = None
     weekly_contact_limit_source: Literal["patient", "assessment"] = "assessment"
+    # 几点收到日常问候（本地整点）。非空 = 患者自己定的；空 = 沿用滚动时间。
+    check_in_hour: int | None = None
     auto_paused: bool = False
     auto_downgraded_at: datetime | None = None
 
@@ -62,6 +64,13 @@ class ProactiveCareSettingsPayload(BaseModel):
     def validate_weekly_limit(cls, value: int | None) -> int | None:
         if value is not None and not 1 <= value <= 7:
             raise ValueError("每周最多主动联系几次，只能填 1 到 7")
+        return value
+
+    @field_validator("check_in_hour")
+    @classmethod
+    def validate_check_in_hour(cls, value: int | None) -> int | None:
+        if value is not None and not 0 <= value <= 23:
+            raise ValueError("想要几点收到日常问候，只能填 0 到 23 的整点")
         return value
 
     @field_validator("timezone")

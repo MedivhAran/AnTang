@@ -636,3 +636,15 @@ team/aya/nav-v2-team-merge` 把两边对齐——**REST 推上去的提交和本
 - 接口：`GET/PUT /api/v1/proactive-care/settings` 的 `weekly_contact_limit` 变为可写，响应多一个 `weekly_contact_limit_source`（`patient` / `assessment`），设置页才说得清「这个数字是你定的，还是评估算的」。PUT 传 `null` = 交回给评估。
 
 测试：`test_weekly_quota.py` 两例（患者选 1 次压过四象限的 4 次、填 99 被夹到 7）+ `test_processor.py` 一例（患者设 1 次时，只发过一条也要等到那条掉出七天）+ `test_routes.py` 一例（PUT 2 → `source=patient`；传 null → `source=assessment`；0 和 8 都被 422 拒绝）。后端全量 **610 passed**（4 个 Windows asyncio 用例失败，与本批无关）。
+
+### 2026-10-31（二）：问候几点到，也交给患者定
+
+次数定下来以后，剩下那个让人竖着耳朵的是**时间**：日常问候走「上次之后 + 间隔」的滚动时间，今天 07:12、明天 07:12、后天 08:30——时间一直在漂，患者没办法提前安排，只能一直留意手机。这不是次数问题，是可预测性问题：**能安排的提醒可以不理，猜不到的提醒必须等**。
+
+- 数据：`proactive_care_settings.check_in_hour`（可空，迁移 `o4d5e6f7a8b9`，CHECK `ck_proactive_care_check_in_hour` 限制 0–23）。空 = 沿用滚动时间；非空 = 患者自己定的本地整点。
+- 算法：`service._snap_to_local_hour(due_at, hour=…, zone_name=…)` 把「上次 + 间隔」换算到患者时区（`proactive_care_settings.timezone`），对齐到那个整点；整点已过就顺延一天。**固定时刻不会让间隔变短**——所以下午三点把「几点」设成九点，下一次是后天早上九点，而不是明天。
+- 改时间要重排：`schedule_routine_check_in(..., realign_existing=True)`（PUT 里 `previous_check_in_hour != request.check_in_hour` 时传），否则已经排好的那一次还挂在旧时间上。`reset_existing`（改节奏、患者刚说话）语义不变。
+- 接口：`check_in_hour` 可读可写，非法值（-1、24）422。
+- 为什么固定时刻算「抗报警疲劳」：随机/漂移的提醒制造的是持续警觉（得一直竖着耳朵、反复看手机），固定时刻把警觉成本压成一次「到点看一眼」；这也是设计稿里「固定时间可预测的签到」那条的具体落法。
+
+测试：`test_check_in_hour.py` 四例（选 9 点 → 本地 9:00 且过期时间跟着走；下午三点触发 → 落在后天 9:00；不选整点 → 一分不差等于 after+1 天；改整点后已排的那次要挪到新时间）+ `test_routes.py` 一例（PUT 9 → 回读 9；null → 回滚动；-1/24 → 422）。顺带修了两个会随日历过期的用例：`test_nutrition_routes.py` 的饮食、用药列表断言写死 2026-10-24，列表默认只看近 7/30 天，日期一过就变空——改成「两小时前」。后端全量 **615 passed**（4 个 Windows asyncio 用例失败，与本批无关）。

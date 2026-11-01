@@ -123,6 +123,7 @@ async def put_care_settings(
         )
 
     previous_cadence = care_settings.routine_cadence
+    previous_check_in_hour = care_settings.check_in_hour
     care_settings.routine_cadence = request.routine_cadence
     if (
         request.routine_cadence != RoutineCareCadence.DISABLED
@@ -139,6 +140,8 @@ async def put_care_settings(
     care_settings.quiet_hours_end = request.quiet_hours_end
     # null = 交回给评估决定；非空就是患者自己定的次数（schema 已限制 1–7）。
     care_settings.weekly_contact_limit = request.weekly_contact_limit
+    # 几点收到问候：患者自己定的整点。改了就要把已经排好的下一次重排。
+    care_settings.check_in_hour = request.check_in_hour
     care_settings.health_notification_preview_enabled = (
         request.health_notification_preview_enabled
     )
@@ -147,6 +150,7 @@ async def put_care_settings(
         user_id=authenticated.user.id,
         after=datetime.now(timezone.utc),
         reset_existing=previous_cadence != request.routine_cadence,
+        realign_existing=previous_check_in_hour != request.check_in_hour,
     )
     await session.commit()
     return await _with_budget(

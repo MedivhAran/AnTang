@@ -138,6 +138,12 @@ class ProactiveCareSettings(Base):
         Integer,
         nullable=True,
     )
+    # 患者自己定的「几点收到日常问候」（0–23 本地小时）。空 = 沿用「上次之后 + 间隔」的滚动时间。
+    # 固定时刻比随机时刻省心：可预测的提醒还能安排，猜不到的提醒会让人一直竖着耳朵。
+    check_in_hour: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
     auto_downgraded_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
@@ -162,6 +168,10 @@ class ProactiveCareSettings(Base):
             "weekly_contact_limit IS NULL OR "
             "(weekly_contact_limit >= 1 AND weekly_contact_limit <= 7)",
             name="ck_proactive_care_weekly_limit",
+        ),
+        CheckConstraint(
+            "check_in_hour IS NULL OR (check_in_hour >= 0 AND check_in_hour <= 23)",
+            name="ck_proactive_care_check_in_hour",
         ),
     )
 
