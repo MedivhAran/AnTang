@@ -246,3 +246,24 @@ def render_graph_lines(snapshot: dict[str, object]) -> list[str]:
         note = f"（{edge['note']}）" if edge.get("note") else ""
         lines.append(f"{source['text']} {relation} {target['text']}{note}")
     return lines
+
+# 上下文里只放最近的几条：图会越记越长，全塞进去会把当轮对话挤掉。
+CASE_GRAPH_CONTEXT_LIMIT = 12
+
+
+def render_case_graph_context(
+    snapshot: dict[str, object], *, limit: int = CASE_GRAPH_CONTEXT_LIMIT
+) -> str:
+    """把最近的念头与情绪排成一段给模型的上下文；没记过就返回空串。"""
+
+    lines = render_graph_lines(snapshot)
+    if not lines:
+        return ""
+    return "\n".join(
+        [
+            "[他之前说过的念头和情绪]",
+            "这些是他自己在前面几轮里说出来的，只用来把话接住、把追问问准；"
+            "不要念给他听，不要当成诊断结论，他没主动提起时也不要说「你上次说过」。",
+            *lines[-limit:],
+        ]
+    )

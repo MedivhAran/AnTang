@@ -115,6 +115,7 @@ def render_core_system_prompt(
     live_heart_rate_context: str = "",
     psychosocial_context: str = "",
     behavior_context: str = "",
+    case_graph_context: str = "",
     glucose_context: str = "",
     hypo_review_context: str = "",
     speech_cue_context: str = "",
@@ -139,6 +140,9 @@ def render_core_system_prompt(
     if behavior_context.strip():
         # 行为与信念同样是内部依据：用于决定追问什么，不是给用户看的统计报表。
         rendered_prompt = f"{rendered_prompt}\n\n{behavior_context}"
+    if case_graph_context.strip():
+        # 他自己说过的念头和情绪：回看用，不是诊断，也不要在回复里念出来。
+        rendered_prompt = f"{rendered_prompt}\n\n{case_graph_context}"
     if hypo_review_context.strip():
         # 复盘的价值在时机：24 小时内问是复盘，过期再问就成了审问。
         # 这里给出的是本轮该做的动作，不是用户档案，不能原样念给用户。

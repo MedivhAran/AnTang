@@ -686,3 +686,5 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 提示词（`api/src/antang_api/agents/core.py`）加四条：说出具体的念头或感受就记；只有他自己说清因果才连边，没说清先只记节点；顺序不对被拒说明记错了，不是换连法；回看时说他的原话，不出现「节点」「图谱」「id」。
 - 顺手修的顺序问题：`graph_snapshot()` 原来只按 `created_at` 排，同一个事务里两条节点的时间可能一样，读出来顺序不稳 → 再加 `id`（uuidv7，本身带时序）兜底。
 - 测试 `api/tests/test_case_graph_tools.py` 5 例：念头与情绪各落各层且 `source_message_id` 指到本轮消息、念头带强度被拒且一条都没写、按他说的因果连成 `triggers`、别人的节点连不上、三个工具名不变。`test_case_graphs.py` 7 例仍过；`ruff`、`pyright` 干净。
+
+- 跟着上下文走（同一节续）：`render_case_graph_context()` 把最近 `CASE_GRAPH_CONTEXT_LIMIT = 12` 条念头/情绪排成一段「[他之前说过的念头和情绪]」，写清「只用来把话接住，不要念给他听、不要当成诊断结论、他没提起时别说『你上次说过』」；`chat.py` 每轮用 `graph_snapshot()` 读出来塞进 `render_core_system_prompt(case_graph_context=...)`，没记过就是空串、完全不会出现空段落。测试 `api/tests/test_case_graph_context.py` 三例（没记过不出现、只放最近 12 条、禁念给他的措辞在）。

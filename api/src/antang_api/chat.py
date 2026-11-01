@@ -84,6 +84,7 @@ from antang_api.schemas.chat import (
 )
 from antang_api.proactive_care.service import record_user_activity
 from antang_api.psychosocial import read_latest_assessment, render_guidance
+from antang_api.psychosocial.graphs import graph_snapshot, render_case_graph_context
 from antang_api.psychosocial.hypo_review import render_hypo_review_prompt
 from antang_api.behavioral import read_fear_summary, render_behavior_context
 from antang_api.settings import settings
@@ -879,6 +880,10 @@ async def stream_chat_run(
             )
             if part
         )
+        # 他自己说过的念头和情绪：最近几条跟着上下文走，省得每轮都去翻表。
+        case_graph_context = render_case_graph_context(
+            await graph_snapshot(session, user_id=user_id)
+        )
         # 复盘只问一次：读取最近 24 小时里偏低、还没问过的那一条。
         # prepare_chat_context 会 rollback，之后再碰 ORM 对象就会过期，
         # 所以这里立刻把开场白定下来，只留 reading.id。
@@ -982,6 +987,7 @@ async def stream_chat_run(
             live_heart_rate_context=live_heart_rate_context,
             psychosocial_context=psychosocial_context,
             behavior_context=behavior_context,
+            case_graph_context=case_graph_context,
             glucose_context=glucose_context,
             hypo_review_context=hypo_review_context,
             speech_cue_context=speech_cue_context,
