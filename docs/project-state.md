@@ -659,3 +659,16 @@ team/aya/nav-v2-team-merge` 把两边对齐——**REST 推上去的提交和本
 - 回滚为什么没兜住：`deploy_pinned.sh` 里 `docker compose up` 在容器 unhealthy 时返回非零，`set -euo pipefail` 让脚本在「回滚自己」这一步之前就退了，`.env` 还停在新镜像上。手工恢复到上一个 `ANTANG_API_IMAGE`（`deploy-20261030-160502`）后服务回来；再部署修复版（`deploy-20261101-171404`）后 healthy、`alembic_version = o4d5e6f7a8b9`、17 条 fingerstick 一条没少。
 - 回归：新增 `test_personal_glucose_sources_survive_the_team_branch_upgrade`——在 `h1c2d3e4f5a6` 上先插 fingerstick/cgm/lab 三条，再 `upgrade head`，断言三条都在。本机 Windows 跑不了它（`asyncio.create_subprocess_exec` 在 Proactor 上 `NotImplementedError`，与另外两条迁移用例同一个已知限制），改用 alembic 手工演练验证：临时库 → `upgrade h1c2d3e4f5a6` → 插三条 → `upgrade head` → 约束是 7 值并集、三条数据都在。
 - 教训：**两条线改同一个 CHECK 时，先跑的必须是「宽」的那条**；合并点只能收尾，救不了中间。回滚脚本要单独测一次「回滚路径本身会不会因为 compose 返回非零而中断」。
+
+### 2026-11-01（二）：WHO-5 接进来，以及把「还缺什么」写进仓库
+
+WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名即可），所以它是第一份「能拿去发表」的自评量表，不需要等授权。
+
+- 数据模型：`psychosocial_assessments` 加 `who5_percent`（0–100，可空，CHECK `ck_psychosocial_who5`；迁移 `p5e6f7a8b9c0`）。存百分比而不是原始分，与恐惧分量表一致：WHO-5 原始分 0–25，乘 4 得百分比，两者口径才可比。
+- **不并入象限**：WHO-5 量的是最近两周的整体状态，恐惧分量表量的是「怕低血糖」。把两者混成一个分数会让 `FEAR_HIGH_PERCENT = 50` 这个切点失去含义，所以只存、只给医护端看。
+- 计分在服务端：`score_who5()`（缺题/外题/越界都抛 ValueError），请求体带 `who5_answers: [{id, value}]`；它是**附加块**，不单独满足「这次提交要有分数」——WHO-5 不能替代恐惧分量表。
+- 题目也走服务端：新增 `GET /health-profile/psychosocial-instrument/who5`（五题、0–5 选项、`gold_options` 为空数组，App 据此不渲染 Gold 段）。换量表、改措辞都不用重装 App。
+- 测试：`test_who5_is_summed_and_scaled_to_a_percentage`（100/80/0 与两种报错）、`test_who5_rides_along_with_an_assessment`（题库 id/五题/空 gold；POST 后 `who5_percent == 60`，恐惧两个分量表仍是 50/33）。后端全量 **617 passed**，5 个失败全是 Windows `asyncio.create_subprocess_exec` 的已知限制。
+- 顺手写了 `docs/next-steps.md`：把「每周次数还差手机控件、话题冷却与行为触发没做、用患者的话查数据只做了第一层、题库等授权、CASE/Think Twice 要先定图存储与两稿审计」一次写清，避免下一个人从零猜。
+- 部署：镜像 `antang-api:deploy-20261101-*`，线上 `/health` ok、`alembic_version = p5e6f7a8b9c0`、`psychosocial_assessments` 已有 `who5_percent` 列、`/psychosocial-instrument/who5` 路由 401（要求登录，说明注册上了）。
+- 推送踩坑：REST 推 12 个文件时 GitHub 回 400，拆成两次推又多出一个提交 → 写 `deploy/squash_remote_head.py` 用同样的树接回原父提交再强移 ref；另外 GitHub 只认 40 位完整 sha，传短 sha 会 `422 parents must be exactly 40 characters`。
