@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi import FastAPI
@@ -42,12 +43,14 @@ async def _patient_headers(client: AsyncClient) -> dict[str, str]:
 
 async def test_a_meal_is_logged_listed_and_deleted(client: AsyncClient) -> None:
     headers = await _patient_headers(client)
+    # 列表默认只看近 7 天：写死日期会随日历过期，用「两小时前」。
+    eaten_at = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
 
     created = await client.post(
         "/api/v1/health-profile/meal-logs",
         headers=headers,
         json={
-            "eaten_at": "2026-10-24T12:30:00+08:00",
+            "eaten_at": eaten_at,
             "meal_type": "lunch",
             "description": "一碗米饭、青菜、鸡胸",
             "carbs_grams": 65,
@@ -104,12 +107,14 @@ async def test_a_medication_is_logged_with_the_text_the_patient_typed(
     client: AsyncClient,
 ) -> None:
     headers = await _patient_headers(client)
+    # 用药列表默认只看近 30 天，同样别写死日期。
+    taken_at = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
 
     created = await client.post(
         "/api/v1/health-profile/medication-logs",
         headers=headers,
         json={
-            "taken_at": "2026-10-24T07:50:00+08:00",
+            "taken_at": taken_at,
             "name": "诺和锐",
             "dose_text": "6 单位",
             "kind": "insulin",
