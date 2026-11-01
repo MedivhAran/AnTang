@@ -648,3 +648,14 @@ team/aya/nav-v2-team-merge` 把两边对齐——**REST 推上去的提交和本
 - 为什么固定时刻算「抗报警疲劳」：随机/漂移的提醒制造的是持续警觉（得一直竖着耳朵、反复看手机），固定时刻把警觉成本压成一次「到点看一眼」；这也是设计稿里「固定时间可预测的签到」那条的具体落法。
 
 测试：`test_check_in_hour.py` 四例（选 9 点 → 本地 9:00 且过期时间跟着走；下午三点触发 → 落在后天 9:00；不选整点 → 一分不差等于 after+1 天；改整点后已排的那次要挪到新时间）+ `test_routes.py` 一例（PUT 9 → 回读 9；null → 回滚动；-1/24 → 422）。顺带修了两个会随日历过期的用例：`test_nutrition_routes.py` 的饮食、用药列表断言写死 2026-10-24，列表默认只看近 7/30 天，日期一过就变空——改成「两小时前」。后端全量 **615 passed**（4 个 Windows asyncio 用例失败，与本批无关）。
+
+### 2026-11-01：把团队分支合上线时，生产被自己的迁移卡住了
+
+第一次把合并后的分支部署到生产，api 容器起不来，`/health` 502，线上停了几分钟。原因不是代码，是**迁移图里两条线都改写同一个 CHECK，先跑的那条会把约束收窄**：
+
+- `u08fd1a24c37` 把 `ck_glucose_source` 收窄成 `('manual','report','public_dataset')`，`v19ae2b35d48` 再收窄成同集合 + `ohio_cgm`。生产库里已经有 94 条 manual、**17 条 fingerstick**、1 条 report、1 条 lab——ALTER TABLE 时 `check constraint "ck_glucose_source" ... is violated by some row`，迁移失败 → 容器启动失败。
+- 我在合并时加的 `m2a3b4c5d6e7` 只负责「最后」把约束并回 7 个值，管不了中间那两步。
+- 修法：把这两条迁移里的**约束值改成超集**（`manual/fingerstick/cgm/lab/report/public_dataset`，`v19ae2b35d48` 再加 `ohio_cgm`），并让 downgrade 也保持宽的那一份——收窄在降级时同样会立刻违约。语义没丢：最终值由合并点 `m2a3b4c5d6e7` 决定。
+- 回滚为什么没兜住：`deploy_pinned.sh` 里 `docker compose up` 在容器 unhealthy 时返回非零，`set -euo pipefail` 让脚本在「回滚自己」这一步之前就退了，`.env` 还停在新镜像上。手工恢复到上一个 `ANTANG_API_IMAGE`（`deploy-20261030-160502`）后服务回来；再部署修复版（`deploy-20261101-171404`）后 healthy、`alembic_version = o4d5e6f7a8b9`、17 条 fingerstick 一条没少。
+- 回归：新增 `test_personal_glucose_sources_survive_the_team_branch_upgrade`——在 `h1c2d3e4f5a6` 上先插 fingerstick/cgm/lab 三条，再 `upgrade head`，断言三条都在。本机 Windows 跑不了它（`asyncio.create_subprocess_exec` 在 Proactor 上 `NotImplementedError`，与另外两条迁移用例同一个已知限制），改用 alembic 手工演练验证：临时库 → `upgrade h1c2d3e4f5a6` → 插三条 → `upgrade head` → 约束是 7 值并集、三条数据都在。
+- 教训：**两条线改同一个 CHECK 时，先跑的必须是「宽」的那条**；合并点只能收尾，救不了中间。回滚脚本要单独测一次「回滚路径本身会不会因为 compose 返回非零而中断」。
