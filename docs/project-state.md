@@ -672,3 +672,17 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 顺手写了 `docs/next-steps.md`：把「每周次数还差手机控件、话题冷却与行为触发没做、用患者的话查数据只做了第一层、题库等授权、CASE/Think Twice 要先定图存储与两稿审计」一次写清，避免下一个人从零猜。
 - 部署：镜像 `antang-api:deploy-20261101-*`，线上 `/health` ok、`alembic_version = p5e6f7a8b9c0`、`psychosocial_assessments` 已有 `who5_percent` 列、`/psychosocial-instrument/who5` 路由 401（要求登录，说明注册上了）。
 - 推送踩坑：REST 推 12 个文件时 GitHub 回 400，拆成两次推又多出一个提交 → 写 `deploy/squash_remote_head.py` 用同样的树接回原父提交再强移 ref；另外 GitHub 只认 40 位完整 sha，传短 sha 会 `422 parents must be exactly 40 characters`。
+
+### 2026-11-01（三）：图存下来了，还得让模型用得上
+
+存了图不等于模型会往里写。这一步补的是「会用」：三个工具加一条提示词规则。
+
+- 三个工具（`api/src/antang_api/tools/case_graph.py`）：
+  - `record_case_node(layer, kind, text, intensity)`：念头一侧记情境/事件/念头/被他当成事实的想法，情绪一侧记情绪/身体感觉/冲动；`intensity` 1–5 **只给情绪**（念头填了会被 `add_node` 拒），`text` 尽量用他自己的话。返回 `node_id` 与中文 `label`，不让他看见 uuid。
+  - `connect_case_nodes(from_node_id, to_node_id, relation, note)`：四种关系各有固定的两侧（念头→念头 causes/supports、念头→情绪 triggers、情绪→情绪 soothes、情绪→情境 avoids）。连不上的组合由服务层拒绝并给出「该用哪种」的提示，而不是让模型换着连法硬凑。
+  - `read_case_graph(layer=None)`：把节点和边读出来，供连边或回看；`layer` 只看一层。
+  - 三个都是平铺参数（吃过「一层嵌套对象模型就不爱调」的亏），`source_message_id` 从这一轮的 `AgentRun.trigger_message_id` 反查，追得到是哪句话记的。
+- 注册三处：`tools/__init__.py` 的 `build_case_graph_tools`、`main.py` 的 `core_tools`（启动期那条「工具缺少活动阶段配置」会拦住漏配）、`chat.py` 的 `TOOL_ACTIVITY_PHASES`（记节点/连边 = `organizing`，读图 = `reading`）。
+- 提示词（`api/src/antang_api/agents/core.py`）加四条：说出具体的念头或感受就记；只有他自己说清因果才连边，没说清先只记节点；顺序不对被拒说明记错了，不是换连法；回看时说他的原话，不出现「节点」「图谱」「id」。
+- 顺手修的顺序问题：`graph_snapshot()` 原来只按 `created_at` 排，同一个事务里两条节点的时间可能一样，读出来顺序不稳 → 再加 `id`（uuidv7，本身带时序）兜底。
+- 测试 `api/tests/test_case_graph_tools.py` 5 例：念头与情绪各落各层且 `source_message_id` 指到本轮消息、念头带强度被拒且一条都没写、按他说的因果连成 `triggers`、别人的节点连不上、三个工具名不变。`test_case_graphs.py` 7 例仍过；`ruff`、`pyright` 干净。

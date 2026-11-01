@@ -147,6 +147,9 @@ TOOL_ACTIVITY_PHASES: dict[str, ActivityPhase] = {
     RECORD_GLUCOSE_TOOL_NAME: "organizing",
     RECORD_GLUCOSE_REPORT_TOOL_NAME: "organizing",
     DELETE_GLUCOSE_REPORT_TOOL_NAME: "organizing",
+    "record_case_node": "organizing",
+    "connect_case_nodes": "organizing",
+    "read_case_graph": "reading",
 }
 
 

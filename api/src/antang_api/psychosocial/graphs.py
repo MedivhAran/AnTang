@@ -174,7 +174,12 @@ async def graph_snapshot(
     if layer is not None:
         nodes_query = nodes_query.where(GraphNode.layer == layer)
     nodes = list(
-        (await session.scalars(nodes_query.order_by(GraphNode.created_at))).all()
+        (
+            await session.scalars(
+                # created_at 在同一个事务里可能完全相同，再用 uuidv7 的 id 兜一次顺序。
+                nodes_query.order_by(GraphNode.created_at, GraphNode.id)
+            )
+        ).all()
     )
     node_ids = [node.id for node in nodes]
     edges: list[GraphEdge] = []

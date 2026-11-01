@@ -32,6 +32,7 @@ from antang_api.settings import settings
 from antang_api.tools import (
     build_behavior_tools,
     build_care_plan_tool,
+    build_case_graph_tools,
     build_glucose_read_tool,
     build_glucose_report_delete_tool,
     build_glucose_report_tool,
@@ -101,6 +102,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
                 care_plan_tool = build_care_plan_tool(session_factory)
                 behavior_tools = build_behavior_tools(session_factory)
+                case_graph_tools = build_case_graph_tools(session_factory)
                 record_tools = build_record_tools(session_factory)
                 glucose_tool = build_glucose_read_tool(session_factory)
                 glucose_write_tool = build_glucose_write_tool(session_factory)
@@ -125,6 +127,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     glucose_report_tool,
                     glucose_report_delete_tool,
                     *behavior_tools,
+                    *case_graph_tools,
                     *record_tools,
                 )
                 tool_middleware = ToolPersistenceMiddleware(
