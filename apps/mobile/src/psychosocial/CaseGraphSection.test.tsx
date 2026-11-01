@@ -78,10 +78,10 @@ describe('CaseGraphSection', () => {
     const tree = await render(GRAPH);
     const text = treeText(tree);
 
-    expect(text).toContain('念头 · 念头');
     expect(text).toContain('我一到晚上就害怕');
-    expect(text).toContain('心里发紧（强度 3/5）');
-    expect(text).not.toContain('我一到晚上就害怕（强度');
+    expect(text).toContain('心里发紧');
+    expect(text).toContain('情绪 · 强度 3/5');
+    expect(text).not.toContain('念头 · 强度');
   });
 
   it('draws the causal link with his own words on both ends', async () => {
@@ -92,9 +92,11 @@ describe('CaseGraphSection', () => {
     );
   });
 
-  it('states in the copy that the view is read only', async () => {
+  it('keeps the explanation at the bottom instead of over the list', async () => {
     const tree = await render(GRAPH);
+    const text = treeText(tree);
 
-    expect(treeText(tree)).toContain('这里只读');
+    expect(text).toContain('灰绿是念头，浅蓝是身上和心里的感觉');
+    expect(text).toContain('想改，就在对话里再说一次');
   });
 });

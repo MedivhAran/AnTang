@@ -201,6 +201,13 @@ def test_core_prompt_keeps_calls_and_repetition_out_of_the_reply() -> None:
     assert "必须至少原样复制一个" in SYSTEM_PROMPT
 
 
+def test_core_prompt_does_not_read_the_patients_words_back_as_proof() -> None:
+    # 曾经出现过「记下了。你说『怕低血糖，怕没人发现』——这句我留着」这种交差式复述，
+    # 像在填表而不像在说话。
+    assert "不要把患者刚说的话括起来再复述一遍" in SYSTEM_PROMPT
+    assert "不要引号、不要重述" in SYSTEM_PROMPT
+
+
 async def test_core_model_rejects_missing_dynamic_prompt() -> None:
     messages: list[AnyMessage] = [HumanMessage(content="你好")]
     request: ModelRequest[AgentContext | None] = ModelRequest(
