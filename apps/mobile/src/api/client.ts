@@ -1148,6 +1148,20 @@ export class ApiClient {
     return parsePsychosocialInstrument(await responseJson(response));
   }
 
+  /**
+   * 世界卫生组织五项身心健康指数（WHO-5）的题库。
+   *
+   * 与恐惧那份题库分开取：老后端没有这条路由，取不到就不显示这一块，
+   * 不能因为一个选填的附加问卷把整页打黑。
+   */
+  async getWho5Instrument(): Promise<PsychosocialInstrument> {
+    const response = await this.authorizedFetch(
+      '/api/v1/health-profile/psychosocial-instrument/who5',
+    );
+    if (!response.ok) throw await this.apiError(response);
+    return parsePsychosocialInstrument(await responseJson(response));
+  }
+
   async getPsychosocialAssessment(): Promise<PsychosocialProfile | null> {
     const response = await this.authorizedFetch(
       '/api/v1/health-profile/psychosocial-assessment',
@@ -1178,6 +1192,9 @@ export class ApiClient {
           gold_score: input.goldScore,
           instrument: input.instrument,
           assessed_at: input.assessedAt,
+          ...(input.who5Answers === undefined
+            ? {}
+            : { who5_answers: input.who5Answers }),
         }),
       },
     );

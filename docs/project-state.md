@@ -690,4 +690,14 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 跟着上下文走（同一节续）：`render_case_graph_context()` 把最近 `CASE_GRAPH_CONTEXT_LIMIT = 12` 条念头/情绪排成一段「[他之前说过的念头和情绪]」，写清「只用来把话接住，不要念给他听、不要当成诊断结论、他没提起时别说『你上次说过』」；`chat.py` 每轮用 `graph_snapshot()` 读出来塞进 `render_core_system_prompt(case_graph_context=...)`，没记过就是空串、完全不会出现空段落。测试 `api/tests/test_case_graph_context.py` 三例（没记过不出现、只放最近 12 条、禁念给他的措辞在）。
 
 - 只读视图（同一节续）：`GET /health-profile/case-graph` 返回 `CaseGraphResponse{nodes, edges}`，节点带 `kind_label`（念头/情绪…）、边带 `relation_label`（触发/引出…）。**只有 GET**——节点是他原话说出来的，改和删都得他再说一次，所以接口不提供写入，界面也不给「编辑」按钮。测试 `test_case_graphs.py` 两例：有念头+情绪+一条触发边时标签与强度都对、什么都没说时两个列表都是空的。
-- 手机端只读卡（同一节续）：pps/mobile/src/psychosocial/CaseGraphSection.tsx 放在「心理」页最上面，标题「你和我说过的话」，一句「这里只读……要改，在对话里再说一次就行」；每条按层标「念头 / 情绪和身体」并带中文 kindLabel，情绪才显示「（强度 N/5）」；有边时底下列「A → 触发 → B」。测试 CaseGraphSection.test.tsx 四例（空态、强度只挂在情绪上、边两端是原话、只读文案在）。
+- 手机端只读卡（同一节续）：apps/mobile/src/psychosocial/CaseGraphSection.tsx 放在「心理」页最上面，标题「你和我说过的话」，一句「这里只读……要改，在对话里再说一次就行」；每条按层标「念头 / 情绪和身体」并带中文 kindLabel，情绪才显示「（强度 N/5）」；有边时底下列「A → 触发 → B」。测试 CaseGraphSection.test.tsx 四例（空态、强度只挂在情绪上、边两端是原话、只读文案在）。
+
+### 2026-11-02 深夜：世卫那五句上手机，选填但要么全答要么全空
+
+- 题库走自己的路由：`api/src/antang_api/client.ts` 的 `getWho5Instrument()` 打 `/api/v1/health-profile/psychosocial-instrument/who5`。**取不到就整块不显示**（`Promise.all` 里 `.catch(() => null)`），老后端不会因为一个选填问卷把整页打黑——与「字段只能加不能改名」是同一条教训。
+- 为什么搭在恐惧那份问卷里一起交：后端 `who5_answers` 不满足「要么逐题答案、要么两个百分比」，单独提交会被 422。所以它排在第七题之后，标题「这两周过得怎么样」，五句 0–5（一直…从未），跟着同一次 POST 走（`who5_answers`）。
+- **要么全答要么全空**：答了一半时保存按钮禁用，并写「上面那五句要么全答、要么全空着」——不让患者以为交上去半份也算。五句都没答就整个字段不传（`client.ts` 里 `...(input.who5Answers === undefined ? {} : {who5_answers})`）。
+- 题干、选项与出处说明都由服务端给（`disclaimer` 里写明「世界卫生组织五项身心健康指数」），换题不用重打包。
+- 测试：`PsychosocialSection.test.tsx` 加三例（五句全答 → `who5Answers` 五条且首条 `{cheerful, 5}`；只答一句 → 提示「还有 4 句没选」且保存禁用；读不到题库 → 整块不出现、主问卷照常）；`client.test.ts` 加两例（`getWho5Instrument` 打 `/who5` 且 `goldOptions` 可为空数组；带 `who5Answers` 时 body 有 `who5_answers`，不带时**没有这个键**）。
+- 顺手修掉上一节里 `pps/mobile` 的错字（应为 `apps/mobile`）。
+- 验证：移动端 **56 套 350 例**全过、`tsc --noEmit` 无输出、`expo lint` 干净。

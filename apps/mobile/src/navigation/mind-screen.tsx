@@ -10,6 +10,7 @@ type Props = {
     ApiClient,
     | "getPsychosocialAssessment"
     | "getPsychosocialInstrument"
+    | "getWho5Instrument"
     | "recordPsychosocialAssessment"
     | "getFearSummary"
     | "getFearBehaviorLogs"

@@ -1782,6 +1782,9 @@ export type PsychosocialAssessmentInput = {
   assessedAt: string;
   // 逐题选择：百分比也照传（兼容还没升级的后端），但真正算分的是服务端。
   answers: { id: string; value: number }[];
+  // 世界卫生组织那五道（WHO-5）是选填的附加块，搭在同一次评估里交上去：
+  // 服务端单独给它一张分数，不与恐惧分量表混在一起。没答就整个不传。
+  who5Answers?: { id: string; value: number }[];
 };
 
 export type InstrumentOption = { value: number; label: string };
