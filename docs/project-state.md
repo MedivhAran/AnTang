@@ -725,3 +725,15 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 测试 `api/tests/test_dual_risk.py` 25 例：九个阈值边界（40/53 → high，54/69 → moderate，70/140/180 → none，181 → moderate，251 → high）、患者自设 80–160 时 78 算偏离、七种标签组合、非法档位报错、上下文行措辞、低值没感觉 → `silent` 且 `source_message_id` 指到这一轮消息、自设范围内但很怕 → `felt_only`、没给数字 → ValueError、时间缺时区 → ValueError、别人的读数 → ValueError、工具名与五个参数名固定。
 - 验证：`ruff` All checks passed、`pyright` 0 errors、`pytest` 全量 676 例——**671 passed**，5 例失败全是 Windows `asyncio.create_subprocess_exec` 的已知限制（`test_isolated_test_runner.py` 两例、`test_schema_branch_merge.py` 三例）。
 - 还没做：手机端没有「他标过的双风险」列表（只进模型上下文）；标签还没有进入主动关怀的语气选择；没有针对 `silent` 一档的专门随访计划。
+
+### 2026-11-02 深夜（四）：行为痕迹先算出来，但先不据此发消息
+
+- 先有文档再写代码：`docs/behavior-triggers.md` 把三个信号的定义、阈值、依据与「算错了会怎样」写清，避免又变成一套关键词规则（`AGENTS.md` 明令禁止用关键词假装做判断）。
+- 三个信号（`api/src/antang_api/proactive_care/behavior_signals.py`，全部只数次数与时间，不读聊天文字）：
+  - `repeated_check`：最近 24 小时里**同一段连续 3 小时内测了 ≥ 6 次**。按窗口而不是按天，是因为「一天 12 次分散在早中晚」和「两小时内 6 次」形状不同，后一种才是越测越慌。6 次是起始阈值：T1DM 常规建议每天 4–10 次，6 次/3 小时已经超出常规区间，上线后按真实分布校准。
+  - `exercise_avoidance`：最近 14 天里 `fear_behavior_logs.kind = 'exercise_avoidance'`（患者自己在对话里说过的）≥ 2 次。不从步数反推——步数下降可能是生病、下雨、通勤变了。
+  - `night_rechecking`：最近 3 个夜里 ≥ 2 个夜里各测了 ≥ 2 次，**按患者本地时区**判夜，窗口 00:00–05:00（05:00 之后混进正常起床）。
+- 只算不发：这一版没有接到主动关怀的发消息路径上，理由写在文档第三节——行为触发最容易变成指责，而且要加行为来源得动任务表「健康事件必须绑穿戴导入」的约束，是独立的一次迁移。现在只把 `render_behavior_signal_context()` 放进系统提示词，并写明「不要报次数、不要念成结论、他没提就先不说」。
+- 撤回与删除不算：血糖看 `revoked_at is null`，行为看 `deleted_at is null`。
+- 测试 `api/tests/proactive_care/test_behavior_signals.py` 13 例：六次集中三小时内命中、分散在早中晚不命中、五十分钟内五次不命中、两天前的不算、一次回避不算两次才算、两周外的回避不算、两个夜里各两次命中、每夜一次不算、05:30 算早晨不算夜里、库里拼起来的两条信号、撤回与删除都不算、别人的读数永不算、四个阈值常量与文档一致。
+- 还没做：不落库（每次现算，量小且没有「他看过这条候选」的状态需要记）；没有接进主动关怀的发送路径；没有做校准看板。

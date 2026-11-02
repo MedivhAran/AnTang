@@ -124,6 +124,7 @@ def render_core_system_prompt(
     behavior_context: str = "",
     case_graph_context: str = "",
     dual_risk_context: str = "",
+    behavior_signal_context: str = "",
     glucose_context: str = "",
     hypo_review_context: str = "",
     speech_cue_context: str = "",
@@ -154,6 +155,9 @@ def render_core_system_prompt(
     if dual_risk_context.strip():
         # 他以前把哪些时刻标成「危险但没感觉」：决定回访问什么，不是给他看的表。
         rendered_prompt = f"{rendered_prompt}\n\n{dual_risk_context}"
+    if behavior_signal_context.strip():
+        # 行为痕迹：帮他理解「为什么反复测」，不是拿来播报次数的统计。
+        rendered_prompt = f"{rendered_prompt}\n\n{behavior_signal_context}"
     if hypo_review_context.strip():
         # 复盘的价值在时机：24 小时内问是复盘，过期再问就成了审问。
         # 这里给出的是本轮该做的动作，不是用户档案，不能原样念给用户。

@@ -82,6 +82,10 @@ from antang_api.schemas.chat import (
     MessageStartedEvent,
     TextDeltaEvent,
 )
+from antang_api.proactive_care.behavior_signals import (
+    behavior_signals,
+    render_behavior_signal_context,
+)
 from antang_api.proactive_care.service import record_user_activity
 from antang_api.psychosocial import read_latest_assessment, render_guidance
 from antang_api.psychosocial.dual_risk import (
@@ -976,6 +980,14 @@ async def stream_chat_run(
             },
             ensure_ascii=False,
         )
+        # 他最近的行为痕迹：只用来理解「为什么反复测 / 为什么不去跑步」，不主动播报。
+        behavior_signal_context = render_behavior_signal_context(
+            await behavior_signals(
+                session,
+                user_id=user_id,
+                timezone_name=care_settings.timezone,
+            )
+        )
         live_heart_rate_context = ""
         if live_heart_rate is not None:
             measured_at = live_heart_rate.measured_at
@@ -1002,6 +1014,7 @@ async def stream_chat_run(
             behavior_context=behavior_context,
             case_graph_context=case_graph_context,
             dual_risk_context=dual_risk_context,
+            behavior_signal_context=behavior_signal_context,
             glucose_context=glucose_context,
             hypo_review_context=hypo_review_context,
             speech_cue_context=speech_cue_context,
