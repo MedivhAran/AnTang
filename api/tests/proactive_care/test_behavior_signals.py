@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from antang_api.database import session_factory
 from antang_api.models import FearBehaviorLog, GlucoseReading, ProactiveCareSettings, User
 from antang_api.proactive_care.behavior_signals import (
     EXERCISE_AVOIDANCE_COUNT,
@@ -25,6 +26,20 @@ from antang_api.proactive_care.behavior_signals import (
 )
 
 NOW = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+async def _clean_up_signal_users():
+    """本文件造的 signal_ 用户跑完删掉，免得别的用例的扫描把它们算进去。"""
+
+    from sqlalchemy import delete
+
+    yield
+    async with session_factory() as session:
+        await session.execute(
+            delete(User).where(User.username.like("signal\\_%", escape="\\"))
+        )
+        await session.commit()
 
 
 def _minutes_ago(minutes: int) -> datetime:

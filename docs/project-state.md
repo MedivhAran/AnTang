@@ -737,3 +737,23 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 撤回与删除不算：血糖看 `revoked_at is null`，行为看 `deleted_at is null`。
 - 测试 `api/tests/proactive_care/test_behavior_signals.py` 13 例：六次集中三小时内命中、分散在早中晚不命中、五十分钟内五次不命中、两天前的不算、一次回避不算两次才算、两周外的回避不算、两个夜里各两次命中、每夜一次不算、05:30 算早晨不算夜里、库里拼起来的两条信号、撤回与删除都不算、别人的读数永不算、四个阈值常量与文档一致。
 - 还没做：不落库（每次现算，量小且没有「他看过这条候选」的状态需要记）；没有接进主动关怀的发送路径；没有做校准看板。
+
+### 2026-11-02 深夜（五）：行为痕迹接进发送路径——先过额度，再只提一次
+
+- 上一节把三条信号算出来了，但没有动作。这一节把它接到主动关怀的发送路径上：痕迹成立 → 排一条 `behavior_signal` 任务 → Worker 起草、Auditor 通过、照常推送。仍然**不**做患者可见的演示按钮或模拟开关。
+- 任务类型：`ProactiveCareTaskKind` 加 `BEHAVIOR_SIGNAL = "behavior_signal"`（迁移 `s8b9c0d1e2f3`，`down_revision = "r7a8b9c0d1e2"`）。「健康事件必须绑穿戴导入」的约束加第四支：`behavior_signal` 要求 `wearable_import_id`/`care_plan_id`/`care_plan_revision` 全空——行为痕迹来自血糖与行为记录，不属于某次穿戴导入。
+- 枚举值的坑：`kind` 是 PostgreSQL 枚举类型（`proactive_care_task_kind`），只改 CHECK 不够，必须 `ALTER TYPE ... ADD VALUE`。而 PostgreSQL 不允许在同一个事务里「加完枚举值立刻拿它去建约束」（`unsafe use of new value of enum type`），所以这一句必须放进 `with op.get_context().autocommit_block():`，CHECK 的删除与重建留在普通事务里。downgrade 先删掉 `behavior_signal` 任务行再收窄约束。
+- `api/src/antang_api/proactive_care/behavior_dispatch.py`：
+  - 话题键 `behavior:<kind>`（与心率事件的 `版本:方向:` 不同域），因此复用话题冷却：同类痕迹三天内只提一次。已在排序中或冷却中的话题直接跳过，不重复排队。
+  - `queue_behavior_signals` 给每条成立的信号排一条任务：`event_key = "behavior:<kind>"`、`evidence = signal.as_dict()`、`expires_at = now + 24h`；`due_at` 已经过期到 `now + TTL` 之后的直接丢——迟到的信号不如不发。
+  - `sweep_behavior_signals`：扫描范围限定「近 24 小时有过血糖读数」且 `health_events_enabled` 的用户（limit 50）。上限只按「本批先扫这么多」写，不做优先级排序——第一版数据量小，不值得为它引入更复杂的调度。
+- Worker（`worker.py`）：`behavior_sweep_interval = timedelta(minutes=10)`，`run_once` 开头跑一次扫描，失败只记日志不影响领任务——扫描坏了不应该让已经排好的消息也发不出去。
+- Processor（`processor.py`）：
+  - 新分支：开关关掉 → `CANCELLED`（`health_events_disabled`）；领到任务时**现算一遍**核对，痕迹已经不成立（例如刚被撤回）→ `SKIPPED`（`behavior_signal_gone`）。宁可少发一条，也不拿过期证据去问「你是不是又在反复测」。
+  - 额度闸门与日常问候共用：总量用完 → `EXPIRED`（`weekly_contact_limit_expired`），**不**像日常问候那样推迟到额度腾出来。理由：日常问候推迟只是晚一点，而行为痕迹是「这几天的形状」，推到三天后再说等于说错了话。
+  - 24 小时「最近刚聊过」的保护对行为任务不生效（它本来就是因为患者没聊、只在测才出现的），不重排、不查是否有日常问候替代。
+  - 提示词分支：`trigger` 带 `signal`/`signal_label`/`occurred`/`window_days`，`never_mention_counts: True`——可以说「这几天测得比平时密」，不许说「你测了 8 次」。
+- 测试 `api/tests/proactive_care/test_behavior_dispatch.py` 6 例：成立即排队、同话题只排一条、昨天提过的不再排、扫描只看近 24 小时且只碰开关开着的用户、痕迹消失 → `SKIPPED`、额度用完 → `EXPIRED` 且起草没被调用。
+- 测试环境坑（值得记）：这些用例会真写用户与任务并提交，别的用例的 Worker 会把留下的任务领走，然后在**别人的断言**里失败——看起来像新功能坏了。处理办法是插件化的：新文件加 autouse fixture 删掉自己造的用户（级联删除任务与读数），processor 用例里的 Worker 用 `behavior_sweep_interval=timedelta(days=1)` 关掉扫描。
+- 验证：`tests/proactive_care` **140 passed**、`ruff` All checks passed、`pyright` 0 errors。
+- 还没做：手机端没有「为什么这次问你」的说明；没有把 `silent` 档（血糖危险但没感觉）与行为痕迹连起来；阈值仍待真实数据校准；扫描上限 50 是按「先扫这么多」写的，没有优先级。

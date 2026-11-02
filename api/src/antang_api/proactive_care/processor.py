@@ -57,6 +57,10 @@ from antang_api.models import (
     PushPermissionState,
     RoutineCareCadence,
 )
+from antang_api.proactive_care.behavior_signals import (
+    BehaviorSignal,
+    behavior_signals,
+)
 from antang_api.proactive_care.heart_rate_shadow import (
     HeartRateShadowResult,
     evaluate_heart_rate_shadow,
@@ -175,6 +179,7 @@ class ProactiveCareProcessor:
 
             plan: CarePlan | None = None
             heart_rate_result: HeartRateShadowResult | None = None
+            behavior_signal: BehaviorSignal | None = None
             if task.kind == ProactiveCareTaskKind.ROUTINE_CHECK_IN:
                 if care_settings.routine_cadence == RoutineCareCadence.DISABLED:
                     _end_claim(
@@ -208,6 +213,41 @@ class ProactiveCareProcessor:
                     )
                     await session.commit()
                     return
+            elif task.kind == ProactiveCareTaskKind.BEHAVIOR_SIGNAL:
+                # 行为痕迹不是内部错误：开关关着就作废，不重排——重排也只会在
+                # 同一处再挡一次。
+                if not care_settings.health_events_enabled:
+                    _end_claim(
+                        task,
+                        status=ProactiveCareTaskStatus.CANCELLED,
+                        reason="health_events_disabled",
+                        now=now,
+                    )
+                    await session.commit()
+                    return
+                # 排队到真正发送之间可能隔了几个小时，那时他也许已经不这样了：
+                # 现算一遍，还对得上才发。
+                expected_kind = (task.health_event_key or "").removeprefix("behavior:")
+                matched = [
+                    signal
+                    for signal in await behavior_signals(
+                        session,
+                        user_id=task.user_id,
+                        now=now,
+                        timezone_name=care_settings.timezone,
+                    )
+                    if signal.kind == expected_kind
+                ]
+                if not matched:
+                    _end_claim(
+                        task,
+                        status=ProactiveCareTaskStatus.SKIPPED,
+                        reason="behavior_signal_gone",
+                        now=now,
+                    )
+                    await session.commit()
+                    return
+                behavior_signal = matched[0]
             else:
                 if not care_settings.health_events_enabled:
                     _end_claim(
@@ -304,7 +344,10 @@ class ProactiveCareProcessor:
                 await session.commit()
                 return
 
-            if task.kind == ProactiveCareTaskKind.ROUTINE_CHECK_IN:
+            if task.kind in (
+                ProactiveCareTaskKind.ROUTINE_CHECK_IN,
+                ProactiveCareTaskKind.BEHAVIOR_SIGNAL,
+            ):
                 quota = await weekly_quota(
                     session,
                     user_id=task.user_id,
@@ -318,6 +361,16 @@ class ProactiveCareProcessor:
                         raise RuntimeError(
                             "每周主动联系额度用完了，却算不出下一次的可用时间"
                         )
+                    if task.kind == ProactiveCareTaskKind.BEHAVIOR_SIGNAL:
+                        # 行为痕迹不是非发不可：额度用完就直接作废，不占位、不重排。
+                        _end_claim(
+                            task,
+                            status=ProactiveCareTaskStatus.EXPIRED,
+                            reason="weekly_contact_limit_expired",
+                            now=now,
+                        )
+                        await session.commit()
+                        return
                     if resumes_at >= task.expires_at:
                         _end_claim(
                             task,
@@ -386,15 +439,24 @@ class ProactiveCareProcessor:
                                 reason="ordinary_contact_limit_expired",
                                 now=now,
                             )
-                            await schedule_routine_check_in(
-                                session,
-                                user_id=task.user_id,
-                                after=now,
-                                reset_existing=False,
-                            )
+                            if task.kind == ProactiveCareTaskKind.ROUTINE_CHECK_IN:
+                                await schedule_routine_check_in(
+                                    session,
+                                    user_id=task.user_id,
+                                    after=now,
+                                    reset_existing=False,
+                                )
                         else:
                             task.attempt_count -= 1
-                            if await has_scheduled_routine_replacement(session, task):
+                            if task.kind == ProactiveCareTaskKind.BEHAVIOR_SIGNAL:
+                                _end_claim(
+                                    task,
+                                    status=ProactiveCareTaskStatus.SCHEDULED,
+                                    reason="ordinary_contact_limit",
+                                    now=now,
+                                    due_at=next_contact_at,
+                                )
+                            elif await has_scheduled_routine_replacement(session, task):
                                 _end_claim(
                                     task,
                                     status=ProactiveCareTaskStatus.CANCELLED,
@@ -510,6 +572,21 @@ class ProactiveCareProcessor:
                     "plan_revision": plan.revision,
                 }
                 memory_query = plan.summary
+            elif task.kind == ProactiveCareTaskKind.BEHAVIOR_SIGNAL:
+                if behavior_signal is None:
+                    raise RuntimeError("行为痕迹任务缺少候选")
+                trigger = {
+                    "kind": task.kind.value,
+                    "rule_id": task.rule_id,
+                    "rule_version": task.rule_version,
+                    "signal": behavior_signal.kind,
+                    "signal_label": behavior_signal.label,
+                    "occurred": behavior_signal.occurred,
+                    "window_days": behavior_signal.window_days,
+                    # 次数只给模型做判断用，不许写进消息里。
+                    "never_mention_counts": True,
+                }
+                memory_query = behavior_signal.label
             else:
                 if (
                     heart_rate_result is None

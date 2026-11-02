@@ -32,6 +32,10 @@ class ProactiveCareTaskKind(str, Enum):
     HEALTH_EVENT = "health_event"
     ROUTINE_CHECK_IN = "routine_check_in"
     PLAN_FOLLOW_UP = "plan_follow_up"
+    # 由行为痕迹（反复测、回避运动、夜里反复确认）产生的任务：它没有穿戴导入
+    # 也没有计划，来源是「数据长成这个样子」，所以单独一类，免得和心率事件混用
+    # 同一套「必须有穿戴导入」的约束。
+    BEHAVIOR_SIGNAL = "behavior_signal"
 
 
 class ProactiveCareTaskStatus(str, Enum):
@@ -287,7 +291,9 @@ class ProactiveCareTask(Base):
             "(kind = 'routine_check_in' AND wearable_import_id IS NULL "
             "AND care_plan_id IS NULL AND care_plan_revision IS NULL) OR "
             "(kind = 'plan_follow_up' AND wearable_import_id IS NULL "
-            "AND care_plan_id IS NOT NULL AND care_plan_revision IS NOT NULL)",
+            "AND care_plan_id IS NOT NULL AND care_plan_revision IS NOT NULL) OR "
+            "(kind = 'behavior_signal' AND wearable_import_id IS NULL "
+            "AND care_plan_id IS NULL AND care_plan_revision IS NULL)",
             name="ck_proactive_care_tasks_source",
         ),
     )
