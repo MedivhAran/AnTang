@@ -755,5 +755,5 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
   - 提示词分支：`trigger` 带 `signal`/`signal_label`/`occurred`/`window_days`，`never_mention_counts: True`——可以说「这几天测得比平时密」，不许说「你测了 8 次」。
 - 测试 `api/tests/proactive_care/test_behavior_dispatch.py` 6 例：成立即排队、同话题只排一条、昨天提过的不再排、扫描只看近 24 小时且只碰开关开着的用户、痕迹消失 → `SKIPPED`、额度用完 → `EXPIRED` 且起草没被调用。
 - 测试环境坑（值得记）：这些用例会真写用户与任务并提交，别的用例的 Worker 会把留下的任务领走，然后在**别人的断言**里失败——看起来像新功能坏了。处理办法是插件化的：新文件加 autouse fixture 删掉自己造的用户（级联删除任务与读数），processor 用例里的 Worker 用 `behavior_sweep_interval=timedelta(days=1)` 关掉扫描。
-- 验证：`tests/proactive_care` **140 passed**、`ruff` All checks passed、`pyright` 0 errors。
+- 验证：`tests/proactive_care` **140 passed**、后端全量 **690 passed**（5 例失败是 Windows 上 `asyncio.create_subprocess_exec` 的已知限制）、`ruff` All checks passed、`pyright` 0 errors。
 - 还没做：手机端没有「为什么这次问你」的说明；没有把 `silent` 档（血糖危险但没感觉）与行为痕迹连起来；阈值仍待真实数据校准；扫描上限 50 是按「先扫这么多」写的，没有优先级。
