@@ -701,3 +701,14 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 测试：`PsychosocialSection.test.tsx` 加三例（五句全答 → `who5Answers` 五条且首条 `{cheerful, 5}`；只答一句 → 提示「还有 4 句没选」且保存禁用；读不到题库 → 整块不出现、主问卷照常）；`client.test.ts` 加两例（`getWho5Instrument` 打 `/who5` 且 `goldOptions` 可为空数组；带 `who5Answers` 时 body 有 `who5_answers`，不带时**没有这个键**）。
 - 顺手修掉上一节里 `pps/mobile` 的错字（应为 `apps/mobile`）。
 - 验证：移动端 **56 套 350 例**全过、`tsc --noEmit` 无输出、`expo lint` 干净。
+
+### 2026-11-02 深夜（二）：同一个话题，刚提过就不再提
+
+- 为什么加这一层：每周总量、夜间静默、连续没人回就降频，管的是「一共有多少」与「什么时候」。但同一件事连着两三天反复问，总量没超也还是「被盯着」。心率这类事件会自己反复出现（今天一段偏快、明天又一段），每次都问「你现在感觉怎么样」，很快就成了背景噪音——真正要紧的那一次反而被忽略。
+- 新文件 `api/src/antang_api/proactive_care/topics.py`：`TOPIC_COOLDOWN = timedelta(days=3)`；`topic_prefix(event_key)` 把 `版本:方向:时间` 折成 `版本:方向:`（时间是事件不是话题，同一方向才算同一话题）；`topic_cooldown_until(session, user_id=…, prefix=…, now=…)` 取该用户同前缀、`COMPLETED`、`finished_at` 最近的一条，返回 `finished_at + 3 天`，已过冷却期返回 `None`。
+- 闸门位置（`processor.py`）：健康事件分支里、`evaluate_heart_rate_shadow` 判定为候选之后，静默时段与额度检查之前。冷却期内 → `SCHEDULED`（`outcome_reason="topic_cooldown"`，`due_at=resumes_at`）并退还失败预算；若冷却结束已超过任务有效期 → `EXPIRED`（`topic_cooldown_expired`）。两处都直接 `commit` 返回，起草 Agent 不会被调用。
+- 范围刻意收窄，理由写在模块 docstring 里：日常问候有自己的间隔与额度，**计划回访是患者自己答应过的事**，压着不发等于我们毁约——这两类不进冷却；目前只有心率事件产生话题。
+- 患者回了话也不提前解除冷却：要挡的是提醒本身的密度，不是「他没理我」；把回话当成可以再发一次的许可，正好是最容易变成催促的写法。
+- 测试 `tests/proactive_care/test_topic_cooldown.py` 9 例：话题只保留版本与方向（高/低是两个话题）、五种读不出话题的键（`None`/空串/缺段/缺方向）；昨天提过的同话题要等到 `finished_at + 3 天`；别的方向、三十天前的旧事件、被 `SKIPPED` 的那次都不占用冷却；processor 层用 monkeypatch 换掉 `evaluate_heart_rate_shadow` 后跑一次 Worker——任务被推到 `due_at == finished_at + TOPIC_COOLDOWN`、`outcome_reason == "topic_cooldown"`、起草图 `calls == 0`。
+- 坑：`HeartRateShadowResult` 有 `received_at`/`age_years`/`context_complete`/`timezone`/`source_package`/`recording_method`/`minute_aggregation` 等必填字段，构造假结果只给 `decision`/`reason`/`event_key` 会 `ValidationError`（表现为任务被记成 `processor_error:ValidationError`）；`proactive_care_tasks.wearable_import_id` 是唯一的，一个任务要配一条自己的 `WearableImport`。
+- 验证：`tests/proactive_care` **121 passed**、`ruff` All checks passed、`pyright` 0 errors。

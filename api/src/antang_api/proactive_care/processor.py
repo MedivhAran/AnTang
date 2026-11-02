@@ -62,6 +62,7 @@ from antang_api.proactive_care.heart_rate_shadow import (
     evaluate_heart_rate_shadow,
 )
 from antang_api.proactive_care.quota import weekly_quota
+from antang_api.proactive_care.topics import topic_cooldown_until, topic_prefix
 from antang_api.proactive_care.service import (
     has_scheduled_routine_replacement,
     schedule_routine_check_in,
@@ -232,6 +233,33 @@ class ProactiveCareProcessor:
                         reason=f"shadow_{heart_rate_result.reason}",
                         now=now,
                     )
+                    await session.commit()
+                    return
+                # 同一话题刚提过就往后推：心率这类事件会反复出现，天天问一遍
+                # 就变成背景噪音，真正要紧的那次反而没人看。
+                resumes_at = await topic_cooldown_until(
+                    session,
+                    user_id=task.user_id,
+                    prefix=topic_prefix(heart_rate_result.event_key),
+                    now=now,
+                )
+                if resumes_at is not None:
+                    if resumes_at >= task.expires_at:
+                        _end_claim(
+                            task,
+                            status=ProactiveCareTaskStatus.EXPIRED,
+                            reason="topic_cooldown_expired",
+                            now=now,
+                        )
+                    else:
+                        task.attempt_count -= 1
+                        _end_claim(
+                            task,
+                            status=ProactiveCareTaskStatus.SCHEDULED,
+                            reason="topic_cooldown",
+                            now=now,
+                            due_at=resumes_at,
+                        )
                     await session.commit()
                     return
 
