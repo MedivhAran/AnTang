@@ -248,6 +248,9 @@ function ChatScreenContent({
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const streamController = useRef<AbortController | null>(null);
   const nearEnd = useRef(true);
+  // 一次性「跳到最底」：进会话、换会话、点「有一条新消息」时置位，等列表量好高度再跳。
+  // 挂载时列表还是空的，直接 scrollToEnd 什么也滚不动，所以必须等 onContentSizeChange。
+  const jumpToEnd = useRef(true);
   const knownMessageIds = useMemo(
     () => new Set(state.messages.map((message) => message.id)),
     [state.messages],
@@ -482,13 +485,18 @@ function ChatScreenContent({
 
   const lastMessage = state.messages[state.messages.length - 1];
   useEffect(() => {
+    // 流式回复时每个字都会让列表长高，跟着滚到底就行；但不要用 scrollToEnd 的动画去追
+    // 一个还在变的目标（追不上时会停在半路，看起来像跳回了上面）。真正的滚动交给
+    // FlatList 的 onContentSizeChange，等在布局完成后再跳一次。
     if (lastMessage === undefined) return;
-    if (!nearEnd.current && state.pendingRequestId === null) return;
-    const frame = requestAnimationFrame(() =>
-      listRef.current?.scrollToEnd({ animated: true }),
-    );
-    return () => cancelAnimationFrame(frame);
-  }, [lastMessage, state.activity, state.pendingRequestId]);
+    if (nearEnd.current) jumpToEnd.current = true;
+  }, [lastMessage, state.pendingRequestId]);
+
+  useEffect(() => {
+    // 换会话（含首次进入）一律从最底下看起。
+    nearEnd.current = true;
+    jumpToEnd.current = true;
+  }, [conversationId]);
 
   useEffect(() => {
     if (targetMessageId === null) return;
@@ -902,6 +910,7 @@ function ChatScreenContent({
           accessibilityRole="button"
           onPress={() => {
             nearEnd.current = true;
+            jumpToEnd.current = true;
             setShowNewMessage(false);
             listRef.current?.scrollToEnd({ animated: true });
           }}
@@ -919,6 +928,7 @@ function ChatScreenContent({
         data={state.messages}
         keyboardShouldPersistTaps="handled"
         keyExtractor={(item) => item.id}
+        maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
         ListEmptyComponent={
           state.historyLoading ? (
             <View style={styles.emptyState}>
@@ -966,6 +976,14 @@ function ChatScreenContent({
           </View>
         }
         onRefresh={state.pendingRequestId === null ? refreshLatest : undefined}
+        onContentSizeChange={() => {
+          if (!jumpToEnd.current) return;
+          jumpToEnd.current = false;
+          // 流式过程中不要动画：目标高度还在变，动画会追不上、停在半路。
+          listRef.current?.scrollToEnd({
+            animated: state.pendingRequestId === null,
+          });
+        }}
         onScroll={({ nativeEvent }) => {
           const distanceFromEnd =
             nativeEvent.contentSize.height -
