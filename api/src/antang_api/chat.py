@@ -4,7 +4,7 @@ import re
 import time
 from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, Literal, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -84,6 +84,10 @@ from antang_api.schemas.chat import (
 )
 from antang_api.proactive_care.service import record_user_activity
 from antang_api.psychosocial import read_latest_assessment, render_guidance
+from antang_api.psychosocial.dual_risk import (
+    recent_annotations,
+    render_dual_risk_context,
+)
 from antang_api.psychosocial.graphs import graph_snapshot, render_case_graph_context
 from antang_api.psychosocial.hypo_review import render_hypo_review_prompt
 from antang_api.behavioral import read_fear_summary, render_behavior_context
@@ -151,6 +155,7 @@ TOOL_ACTIVITY_PHASES: dict[str, ActivityPhase] = {
     "record_case_node": "organizing",
     "connect_case_nodes": "organizing",
     "read_case_graph": "reading",
+    "record_dual_risk": "organizing",
 }
 
 
@@ -884,6 +889,14 @@ async def stream_chat_run(
         case_graph_context = render_case_graph_context(
             await graph_snapshot(session, user_id=user_id)
         )
+        # 他以前把哪些时刻标成过「血糖危险但没感觉」这一类，只提他自己标过的。
+        dual_risk_context = render_dual_risk_context(
+            await recent_annotations(
+                session,
+                user_id=user_id,
+                since=datetime.now(UTC) - timedelta(days=90),
+            )
+        )
         # 复盘只问一次：读取最近 24 小时里偏低、还没问过的那一条。
         # prepare_chat_context 会 rollback，之后再碰 ORM 对象就会过期，
         # 所以这里立刻把开场白定下来，只留 reading.id。
@@ -988,6 +1001,7 @@ async def stream_chat_run(
             psychosocial_context=psychosocial_context,
             behavior_context=behavior_context,
             case_graph_context=case_graph_context,
+            dual_risk_context=dual_risk_context,
             glucose_context=glucose_context,
             hypo_review_context=hypo_review_context,
             speech_cue_context=speech_cue_context,

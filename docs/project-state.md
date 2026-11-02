@@ -712,3 +712,16 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 测试 `tests/proactive_care/test_topic_cooldown.py` 9 例：话题只保留版本与方向（高/低是两个话题）、五种读不出话题的键（`None`/空串/缺段/缺方向）；昨天提过的同话题要等到 `finished_at + 3 天`；别的方向、三十天前的旧事件、被 `SKIPPED` 的那次都不占用冷却；processor 层用 monkeypatch 换掉 `evaluate_heart_rate_shadow` 后跑一次 Worker——任务被推到 `due_at == finished_at + TOPIC_COOLDOWN`、`outcome_reason == "topic_cooldown"`、起草图 `calls == 0`。
 - 坑：`HeartRateShadowResult` 有 `received_at`/`age_years`/`context_complete`/`timezone`/`source_package`/`recording_method`/`minute_aggregation` 等必填字段，构造假结果只给 `decision`/`reason`/`event_key` 会 `ValidationError`（表现为任务被记成 `processor_error:ValidationError`）；`proactive_care_tasks.wearable_import_id` 是唯一的，一个任务要配一条自己的 `WearableImport`。
 - 验证：`tests/proactive_care` **121 passed**、`ruff` All checks passed、`pyright` 0 errors。
+
+### 2026-11-02 深夜（三）：血糖危险不危险，和他感觉到没有，分开记
+
+- 为什么分开：一张表只存一个「风险等级」，会把最要紧的一档压平——血糖 3.1 他毫无感觉，和血糖 4.2 他慌得不行，复盘时该练的东西完全相反（前者是察觉，后者是怕）。蓝图里把这件事叫「事件级双风险」，是下一版论文的创新点。
+- 新表 `risk_annotations`（迁移 `r7a8b9c0d1e2`，`down_revision = "q6f7a8b9c0d1"`）：`physiological_risk`（none / moderate / high）、`felt_risk`（none / some / strong）、`label`（both / silent / felt_only / neither，由前两列推出来）、`measured_at`、`glucose_reading_id`（可空，指到那条读数）、`source_message_id`、`note`。CHECK 把三个枚举都钉住，标签写错直接违约。
+- 生理风险怎么算（`api/src/antang_api/psychosocial/dual_risk.py`）：用**患者自己的目标范围**判「偏离」，用固定阈值判「危险」——`_CRITICAL_LOW_MG_DL = 54`（3.0）、`_CRITICAL_HIGH_MG_DL = 250`。目标范围是患者和医生定的，可能比通用 3.9–10.0 宽，拿它判紧急会漏掉真正危险的低值，所以两套标准各管一件事。
+- 感受风险不推断：只有患者这一轮说了感觉才记（`none` / `some` / `strong`），没说就先问一句。留空不是「没风险」，是「我们不知道」。
+- 工具 `record_dual_risk`（`api/src/antang_api/tools/dual_risk.py`，平铺五个参数：`felt_risk` 加 `value_mmol` / `glucose_reading_id` / `measured_at` / `note`）：要么给他报的数字，要么给已有那条读数的 id。**两个都没有就报错让他先把数字记下来**——不许拿一个感觉去猜生理风险。时间不带时区直接拒绝；别人的读数拒绝。
+- 上下文（`chat.py` 的 `dual_risk_context`）：最近 90 天他标过的时刻折成「10-30 03:10 血糖危险，他没感觉到」这类行，并写明「不要拿来当结论；他没提，就不要主动说『你上次没感觉到』」。
+- 提示词两条（`agents/core.py`）：①报数又说了感觉就调「记双风险」，只说数没说感觉先问一句——「3.0 以下却毫无感觉」这一档最危险也最容易漏；②两面不一致时说法要分开：低而不觉得要讲清马上处理、并提醒下次更低也可能察觉不到；不低却很怕就处理怕，不加重「我真的要低血糖了」。
+- 测试 `api/tests/test_dual_risk.py` 25 例：九个阈值边界（40/53 → high，54/69 → moderate，70/140/180 → none，181 → moderate，251 → high）、患者自设 80–160 时 78 算偏离、七种标签组合、非法档位报错、上下文行措辞、低值没感觉 → `silent` 且 `source_message_id` 指到这一轮消息、自设范围内但很怕 → `felt_only`、没给数字 → ValueError、时间缺时区 → ValueError、别人的读数 → ValueError、工具名与五个参数名固定。
+- 验证：`ruff` All checks passed、`pyright` 0 errors、`pytest` 全量 676 例——**671 passed**，5 例失败全是 Windows `asyncio.create_subprocess_exec` 的已知限制（`test_isolated_test_runner.py` 两例、`test_schema_branch_merge.py` 三例）。
+- 还没做：手机端没有「他标过的双风险」列表（只进模型上下文）；标签还没有进入主动关怀的语气选择；没有针对 `silent` 一档的专门随访计划。

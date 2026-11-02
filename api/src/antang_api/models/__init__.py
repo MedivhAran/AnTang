@@ -50,7 +50,7 @@ from antang_api.models.nutrition import (
     MealLog,
     MedicationLog,
 )
-from antang_api.models.psychosocial import PsychosocialAssessment
+from antang_api.models.psychosocial import PsychosocialAssessment, RiskAnnotation
 from antang_api.models.proactive_care import (
     CarePlan,
     CarePlanStatus,
@@ -140,6 +140,7 @@ __all__ = [
     "ProfileOperation",
     "ProfileTargetType",
     "PsychosocialAssessment",
+    "RiskAnnotation",
     "ProactiveCareSettings",
     "ProactiveCareTask",
     "ProactiveCareTaskKind",

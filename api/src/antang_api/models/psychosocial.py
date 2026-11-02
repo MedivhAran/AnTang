@@ -66,3 +66,54 @@ class PsychosocialAssessment(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class RiskAnnotation(Base):
+    """一个时刻的「生理风险」与「感受风险」，分开记。
+
+    为什么分开：血糖 4.2 但患者慌得不行，和血糖 3.1 患者毫无感觉，是两种完全
+    不同的处境，回应方式也不该一样。前者的风险主要是怕，后者是真的危险，而且
+    往往因为他察觉不到而更危险。只存一个「风险等级」把这两件事压成一个数，
+    复盘时分不出该练什么。
+
+    为什么不实时推断：感受是患者自己在那一刻说的，不是我们从语气里猜的。
+    模型读到他说了什么就填什么，看不到就留空——留空本身也是信息。
+    """
+
+    __tablename__ = "risk_annotations"
+    __table_args__ = (
+        CheckConstraint(
+            "physiological_risk IN ('none', 'moderate', 'high')",
+            name="ck_risk_annotations_physiological",
+        ),
+        CheckConstraint(
+            "felt_risk IN ('none', 'some', 'strong')",
+            name="ck_risk_annotations_felt",
+        ),
+        CheckConstraint(
+            "label IN ('both', 'silent', 'felt_only', 'neither')",
+            name="ck_risk_annotations_label",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid, primary_key=True, server_default=text("uuidv7()")
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    # 指到那条读数；患者只说了个感觉、没说过数字时留空。
+    glucose_reading_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("glucose_readings.id", ondelete="SET NULL"), nullable=True
+    )
+    measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    physiological_risk: Mapped[str] = mapped_column(String(16))
+    felt_risk: Mapped[str] = mapped_column(String(16))
+    label: Mapped[str] = mapped_column(String(16))
+    source_message_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
+    )
+    note: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

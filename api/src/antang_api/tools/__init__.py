@@ -1,6 +1,7 @@
 from antang_api.tools.behavior import build_behavior_tools
 from antang_api.tools.care_plan import build_care_plan_tool
 from antang_api.tools.case_graph import build_case_graph_tools
+from antang_api.tools.dual_risk import build_dual_risk_tool
 from antang_api.tools.glucose import (
     build_glucose_read_tool,
     build_glucose_report_delete_tool,
@@ -18,6 +19,7 @@ __all__ = [
     "build_behavior_tools",
     "build_care_plan_tool",
     "build_case_graph_tools",
+    "build_dual_risk_tool",
     "build_glucose_read_tool",
     "build_glucose_report_delete_tool",
     "build_glucose_report_tool",
