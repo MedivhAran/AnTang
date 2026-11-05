@@ -31,11 +31,14 @@ function buildApi(entries: DualRiskEntry[]) {
   };
 }
 
-async function render(entries: DualRiskEntry[]): Promise<ReactTestRenderer> {
+async function render(
+  entries: DualRiskEntry[],
+  onOpenRecord?: (measuredAt: string) => void,
+): Promise<ReactTestRenderer> {
   const api = buildApi(entries);
   let tree: ReactTestRenderer | undefined;
   await act(async () => {
-    tree = create(<DualRiskSection api={api} />);
+    tree = create(<DualRiskSection api={api} onOpenRecord={onOpenRecord} />);
   });
   return tree!;
 }
@@ -89,5 +92,33 @@ describe('DualRiskSection', () => {
     const tree = await render([]);
 
     expect(treeText(tree)).toContain('还没有记下这样的对照');
+  });
+
+  it('opens the record of that moment when a row is tapped', async () => {
+    const opened: string[] = [];
+    const tree = await render(ENTRIES, (measuredAt) => opened.push(measuredAt));
+
+    const rows = tree.root.findAll(
+      (node) =>
+        typeof node.props?.onPress === 'function' &&
+        node.props?.accessibilityHint === '回到那天的记录',
+    );
+    expect(rows).toHaveLength(2);
+
+    await act(async () => {
+      rows[0].props.onPress();
+    });
+
+    expect(opened).toEqual(['2026-11-02T03:10:00+08:00']);
+    expect(treeText(tree)).toContain('点一行，能回到那天的记录');
+  });
+
+  it('stays plain text when nothing can be opened', async () => {
+    const tree = await render(ENTRIES);
+
+    expect(treeText(tree)).not.toContain('点一行');
+    expect(
+      tree.root.findAll((node) => node.props?.accessibilityHint === '回到那天的记录'),
+    ).toHaveLength(0);
   });
 });

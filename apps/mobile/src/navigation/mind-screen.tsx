@@ -23,6 +23,8 @@ type Props = {
     | "deleteBeliefEvent"
   >;
   onOpenCareSettings: () => void;
+  /** 在「血糖和你的感觉」里点一行：切到记录页并落到那一条。 */
+  onOpenRecord?: (measuredAt: string) => void;
   /** 切到「心理」时重建一次，刚在对话里记下的念头要立刻能看到。 */
   visible?: boolean;
 };
@@ -36,7 +38,12 @@ type Props = {
  * 为什么主动关怀也放在这里：它决定的是「糖糖什么时候来联系你」，跟沟通方式
  * 是同一件事的两面（频率 + 措辞），放在「我的」页会和账号设置混在一起。
  */
-export function MindScreen({ api, onOpenCareSettings, visible = true }: Props) {
+export function MindScreen({
+  api,
+  onOpenCareSettings,
+  onOpenRecord,
+  visible = true,
+}: Props) {
   // 用 key 让切回来时重新拉一次：量表上次填写时间、念头条数都会变。
   return (
     <ScrollView
@@ -52,7 +59,7 @@ export function MindScreen({ api, onOpenCareSettings, visible = true }: Props) {
         </Text>
       </View>
 
-      <DualRiskSection api={api} />
+      <DualRiskSection api={api} onOpenRecord={onOpenRecord} />
 
       <CaseGraphSection api={api} />
 

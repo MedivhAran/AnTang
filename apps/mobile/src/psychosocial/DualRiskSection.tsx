@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { ApiClient } from '../api/client';
 import type { DualRiskEntry, DualRiskLabel } from '../api/types';
@@ -37,9 +37,16 @@ function mmolText(valueMgDl: number | null): string {
 
 export type DualRiskSectionProps = {
   api: Pick<ApiClient, 'getDualRiskEntries'>;
+  /**
+   * 点一行回到那天的记录。
+   *
+   * 这一块只把两件事并排放着，患者看完往往还想看当天到底还记了什么（吃过什么、
+   * 打了多少）。不传就只是文字，面板上不许出现按不动的「查看」。
+   */
+  onOpenRecord?: (measuredAt: string) => void;
 };
 
-export function DualRiskSection({ api }: DualRiskSectionProps) {
+export function DualRiskSection({ api, onOpenRecord }: DualRiskSectionProps) {
   const [entries, setEntries] = useState<DualRiskEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -80,20 +87,39 @@ export function DualRiskSection({ api }: DualRiskSectionProps) {
           我就会记在这里。
         </Text>
       ) : null}
-      {entries?.map((entry) => (
-        <View key={entry.id} style={styles.row}>
-          <View
-            style={[styles.bar, { backgroundColor: LABEL_COLORS[entry.label] }]}
-          />
-          <View style={styles.rowBody}>
-            <Text style={styles.rowText}>{entry.labelText}</Text>
-            <Text style={styles.rowMeta}>
-              {measuredTimeLabel(entry.measuredAt, undefined)} ·{' '}
-              {mmolText(entry.valueMgDl)}
-            </Text>
-          </View>
-        </View>
-      ))}
+      {entries?.map((entry) => {
+        const meta = `${measuredTimeLabel(entry.measuredAt, undefined)} · ${mmolText(entry.valueMgDl)}`;
+        const row = (
+          <>
+            <View
+              style={[styles.bar, { backgroundColor: LABEL_COLORS[entry.label] }]}
+            />
+            <View style={styles.rowBody}>
+              <Text style={styles.rowText}>{entry.labelText}</Text>
+              <Text style={styles.rowMeta}>{meta}</Text>
+            </View>
+          </>
+        );
+        if (onOpenRecord === undefined) {
+          return (
+            <View key={entry.id} style={styles.row}>
+              {row}
+            </View>
+          );
+        }
+        return (
+          <Pressable
+            accessibilityHint="回到那天的记录"
+            accessibilityLabel={`${entry.labelText}，${meta}`}
+            accessibilityRole="button"
+            key={entry.id}
+            onPress={() => onOpenRecord(entry.measuredAt)}
+            style={({ pressed }) => [styles.row, pressed ? styles.rowPressed : null]}
+          >
+            {row}
+          </Pressable>
+        );
+      })}
       {hasEntries ? (
         <>
           <Text style={styles.legend}>
@@ -102,6 +128,9 @@ export function DualRiskSection({ api }: DualRiskSectionProps) {
           <Text style={styles.footnote}>
             这里只把你当时的记录并排放着，不打分，也不给建议。要改，就在对话里再说一次。
           </Text>
+          {onOpenRecord === undefined ? null : (
+            <Text style={styles.footnote}>点一行，能回到那天的记录。</Text>
+          )}
         </>
       ) : null}
     </View>
@@ -141,6 +170,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     paddingVertical: spacing.xs,
+  },
+  // 可按的时候给一点按压反馈：这一块自己是只读的，能点的地方要让手指知道。
+  rowPressed: {
+    opacity: 0.6,
   },
   bar: {
     alignSelf: 'stretch',

@@ -120,12 +120,14 @@ function fakeApi(overrides: Record<string, unknown> = {}) {
 async function mount(
   api = fakeApi(),
   handlers: { onImport?: () => void; onRecordGlucose?: () => void } = {},
+  focus: { at: string; id: number } | null = null,
 ): Promise<ReactTestRenderer> {
   let renderer: ReactTestRenderer | null = null;
   await act(async () => {
     renderer = create(
       <RecordScreen
         api={api as never}
+        focus={focus}
         gadgetbridge={fakeGadgetbridge()}
         healthConnect={fakeHealthConnect()}
         onImport={handlers.onImport ?? (() => undefined)}
@@ -516,6 +518,46 @@ describe("glucose trend series", () => {
       false,
       false,
     ]);
+  });
+});
+
+describe("record focus", () => {
+  it("lands on the moment he tapped and says which one it is", async () => {
+    // 20 天前点的：默认 14 天窗口不含它，必须把窗口放宽到包住那一天。
+    const focusAt = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000 - 3600 * 1000).toISOString();
+    const api = fakeApi({
+      getGlucoseReadings: jest.fn(async () => [
+        { ...READING, measuredAt: focusAt, createdAt: focusAt },
+      ]),
+    });
+    const tree = await mount(api, {}, { at: focusAt, id: 1 });
+
+    expect(api.getGlucoseReadings).toHaveBeenCalledWith(22);
+    const text = JSON.stringify(tree.toJSON());
+    expect(text).toContain("那次的记录");
+    expect(text).toContain("取消定位");
+  });
+
+  it("does not pretend to find a reading that is gone", async () => {
+    const focusAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    const tree = await mount(fakeApi({ getGlucoseReadings: jest.fn(async () => []) }), {}, {
+      at: focusAt,
+      id: 1,
+    });
+
+    const text = JSON.stringify(tree.toJSON());
+    expect(text).toContain("那次没找到读数，可能已经删掉了");
+  });
+
+  it("lets him put the highlight away", async () => {
+    const focusAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const tree = await mount(fakeApi(), {}, { at: focusAt, id: 1 });
+
+    await act(async () => {
+      tree.root.findByProps({ accessibilityLabel: "取消定位" }).props.onPress();
+    });
+
+    expect(JSON.stringify(tree.toJSON())).not.toContain("那次的记录");
   });
 });
 

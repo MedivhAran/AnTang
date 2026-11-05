@@ -486,7 +486,46 @@ type Props = {
   gadgetbridge: GadgetbridgeController;
   /** tab 切到「记录」时刷新一次：对话里刚记下的饭/药要能立刻出现在列表里。 */
   visible?: boolean;
+  /**
+   * 从别的页跳过来，要求落到某一天的那条记录上（带 id 才重新触发）。
+   *
+   * 目前只有「血糖和你的感觉」在用它：点一行就回到那天到底记了什么。只做跳转和
+   * 标记，不在这里做任何解释，也不自动展开编辑。
+   */
+  focus?: RecordFocus | null;
 };
+
+export type RecordFocus = {
+  /** 要落到哪一刻（ISO 串）。取最接近的一条读数，不要求分秒完全相等。 */
+  at: string;
+  /** 每次点都换一个 id：同一个日期连点两下也要重新触发定位。 */
+  id: number;
+};
+
+/** 和这一条相差十分钟以内都算「那次」，会话里说的时间和库里的时间常差几十秒。 */
+const FOCUS_MATCH_MS = 10 * 60 * 1000;
+
+/** 找出最接近这一刻的那条读数；都不在十分钟内就返回 null。 */
+function nearestReading(
+  readings: GlucoseReading[],
+  at: string,
+): GlucoseReading | null {
+  const time = new Date(at).getTime();
+  if (Number.isNaN(time)) {
+    return null;
+  }
+  let best: { reading: GlucoseReading; gap: number } | null = null;
+  for (const reading of readings) {
+    const gap = Math.abs(new Date(reading.measuredAt).getTime() - time);
+    if (gap > FOCUS_MATCH_MS) {
+      continue;
+    }
+    if (best === null || gap < best.gap) {
+      best = { reading, gap };
+    }
+  }
+  return best === null ? null : best.reading;
+}
 
 /**
  * 记录页：血糖 / 饮食 / 用药 / 运动 / 睡眠。
@@ -501,6 +540,7 @@ export function RecordScreen({
   healthConnect,
   gadgetbridge,
   visible = true,
+  focus = null,
 }: Props) {
   const [tab, setTab] = useState<RecordTabKey>("glucose");
   const [source, setSource] = useState<"manual" | "sensor">("manual");
@@ -526,6 +566,8 @@ export function RecordScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // 从心理页点进来的那一刻：列表里把最接近的一条标出来，顶部给一句说明。
+  const [focusedAt, setFocusedAt] = useState<string | null>(null);
 
   const [mealType, setMealType] = useState<"breakfast" | "lunch" | "dinner" | "snack">(
     "lunch",
@@ -543,8 +585,15 @@ export function RecordScreen({
       return;
     }
     let active = true;
+    // 目标那天可能在 30 天窗口内（双风险只看 30 天），窗口得把它包住；
+    // 默认仍是 14 天，接口上限 90。
+    const focusTime = focus === null ? Number.NaN : new Date(focus.at).getTime();
+    const daysAgo = Number.isNaN(focusTime)
+      ? 0
+      : Math.floor((Date.now() - focusTime) / (24 * 60 * 60 * 1000));
+    const readingDays = Math.min(90, Math.max(14, daysAgo + 2));
     Promise.all([
-      api.getGlucoseReadings(),
+      api.getGlucoseReadings(readingDays),
       api.getGlucoseSummary(),
       api.getMealLogs(),
       api.getMedicationLogs(),
@@ -568,6 +617,17 @@ export function RecordScreen({
             return;
           }
           setReadings(rows);
+          // 定位跟着这一轮数据一起落地：放进 effect 头部直接 setState 会被 lint 拦
+          // （react-hooks/set-state-in-effect），而且数据没回来就标高亮会闪一下。
+          setFocusedAt(focus === null ? null : focus.at);
+          // 落到的那条如果来自报告/传感器，得切到「传感器」子栏，否则高亮在另一栏里，
+          // 患者看到的是「顶上说这是那次记录，列表里却没有」。
+          if (focus !== null) {
+            const hit = nearestReading(rows, focus.at);
+            if (hit !== null) {
+              setSource(hit.source === "report" || hit.source === "cgm" ? "sensor" : "manual");
+            }
+          }
           setSummary(nextSummary);
           setMeals(nextMeals);
           setMedications(nextMedications);
@@ -594,7 +654,7 @@ export function RecordScreen({
     return () => {
       active = false;
     };
-  }, [api, visible]);
+  }, [api, visible, focus]);
 
   // 「传感器」那一栏只看导入进来的 CGM；指尖血/化验单留在「手动」。
   const manualReadings = readings.filter(
@@ -605,6 +665,9 @@ export function RecordScreen({
   const reportReadings = readings.filter(
     (reading) => reading.source === "report" || reading.source === "cgm",
   );
+  // 落到那天的那一条：多条时取最接近的。找不到就是 null，界面会直说「可能已经删掉了」。
+  const focusedReadingId =
+    focusedAt === null ? null : (nearestReading(readings, focusedAt)?.id ?? null);
   const cgmSampleStats =
     cgmSamples.length === 0
       ? null
@@ -801,6 +864,26 @@ export function RecordScreen({
               ))}
             </View>
 
+            {/* 从「血糖和你的感觉」点进来时，先说清落到了哪一次；找不到也要说清，
+                不能让患者自己在一列卡片里猜哪条是刚才点的。 */}
+            {focusedAt === null ? null : (
+              <View style={styles.focusBar}>
+                <Text style={styles.focusBarText}>
+                  {focusedReadingId === null
+                    ? `${measuredTimeLabel(focusedAt, undefined)} 那次没找到读数，可能已经删掉了`
+                    : `这是 ${measuredTimeLabel(focusedAt, undefined)} 那次的记录`}
+                </Text>
+                <Pressable
+                  accessibilityLabel="取消定位"
+                  accessibilityRole="button"
+                  onPress={() => setFocusedAt(null)}
+                  style={styles.focusBarClose}
+                >
+                  <Text style={styles.focusBarCloseText}>×</Text>
+                </Pressable>
+              </View>
+            )}
+
             {/* 两个子栏共用一张趋势图：手输的点、报告里的点都在这条线上，
                 切到哪一栏都看得见自己最近的高低起伏。 */}
             <GlucoseTrend now={trendNow} readings={readings} target={target} />
@@ -844,7 +927,13 @@ export function RecordScreen({
                   </View>
                 ) : null}
                 {manualReadings.map((reading) => (
-                  <View key={reading.id} style={styles.card}>
+                  <View
+                    key={reading.id}
+                    style={[
+                      styles.card,
+                      reading.id === focusedReadingId ? styles.cardFocused : null,
+                    ]}
+                  >
                     <Text style={styles.cardTitle}>{formatGlucose(reading)}</Text>
                     <Text style={styles.cardBody}>
                        测量{" "}
@@ -911,7 +1000,13 @@ export function RecordScreen({
                   </Pressable>
                 ))}
                 {reportReadings.slice(0, 5).map((reading) => (
-                  <View key={reading.id} style={styles.card}>
+                  <View
+                    key={reading.id}
+                    style={[
+                      styles.card,
+                      reading.id === focusedReadingId ? styles.cardFocused : null,
+                    ]}
+                  >
                     <Text style={styles.cardTitle}>{formatGlucose(reading)}</Text>
                     <Text style={styles.cardBody}>
                       {measuredTimeLabel(
@@ -1524,6 +1619,36 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontFamily: typefaces.sans,
     fontSize: 12.5,
+  },
+  // 定位到某一天时顶上那一句；浅色底、不抢眼，但比旁边卡片明显。
+  focusBar: {
+    alignItems: "center",
+    backgroundColor: colors.paperMuted,
+    borderRadius: radii.md,
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  focusBarText: {
+    color: colors.ink,
+    flex: 1,
+    fontFamily: typefaces.sans,
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
+  focusBarClose: {
+    paddingHorizontal: spacing.xs,
+  },
+  focusBarCloseText: {
+    color: colors.muted,
+    fontSize: 18,
+    lineHeight: 20,
+  },
+  // 被定位的那一条：只加一圈边框，不改底色，免得看起来像「标成异常」。
+  cardFocused: {
+    borderColor: colors.primary,
+    borderWidth: 1.5,
   },
   linkDanger: {
     color: colors.danger,
