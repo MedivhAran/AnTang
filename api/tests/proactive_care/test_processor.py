@@ -606,7 +606,17 @@ async def test_worker_generates_audits_and_commits_one_message(
         ]
         # 患者自己的消息不带原因；主动关怀那条带着「为什么是我先开口」。
         assert messages[0].proactive_reason is None
-        assert messages[1].proactive_reason == ROUTINE_REASON
+        assert messages[1].proactive_reason is not None
+        # 原因句会随「这会儿是早上还是深夜」在两种说法之间切换，但都得说清是平时的例行问候。
+        assert messages[1].proactive_reason in {
+            ROUTINE_REASON,
+            "早上这会儿，我们平时会聊几句",
+            "上午这会儿，我们平时会聊几句",
+            "中午这会儿，我们平时会聊几句",
+            "下午这会儿，我们平时会聊几句",
+            "傍晚这会儿，我们平时会聊几句",
+            "晚上这会儿，我们平时会聊几句",
+        }
 
         runs = list(
             await session.scalars(

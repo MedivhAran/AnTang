@@ -1158,7 +1158,11 @@ class ProactiveCareProcessor:
                     role=MessageRole.ASSISTANT,
                     status=MessageStatus.COMPLETED,
                     content=message,
-                    proactive_reason=message_reason(task),
+                    proactive_reason=message_reason(
+                        task,
+                        now=finished_at,
+                        timezone_name=live_settings.timezone,
+                    ),
                     sources=[],
                     completed_at=finished_at,
                     conversation_id=care.id,

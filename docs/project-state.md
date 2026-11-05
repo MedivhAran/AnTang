@@ -776,3 +776,17 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 验证：后端全量 **702 passed**（5 例失败仍是 Windows 上 `asyncio.create_subprocess_exec` 的已知限制）、`ruff` All checks passed、`pyright` 0 errors；手机端 `tsc --noEmit` 无输出、相关 4 套 45 例全过。
 - 还没做：原因句是固定文案，不随「这次具体看到了什么」变化；推送正文里还没带原因（只有对话页里能看到）；`silent` 档与行为痕迹仍各自独立。
 - 已部署（2026-11-05 20:15）：镜像 `antang-api:deploy-20261105-201533`，`/health` 返回 `{"status":"ok","mode":"full"}`，`alembic_version = t9c0d1e2f3a4`；`messages.proactive_reason` 列与 `proactive_care_task_kind` 的 `behavior_signal` 值都已在线。部署日志：`/tmp/antang-deploy.log`；核对脚本 `D:\deepseek-harness\deploy\verify_reason_deploy.sh`。
+
+### 2026-11-05（二）：原因句从「哪一类事实」改成「哪一天哪一段」
+
+- 上一版每类任务只有一句固定的话，读起来像模板：同一句话在任何一天都成立，也就等于没有提供信息。这一版把「什么时候」装进去，但仍然不装次数与数值：
+  - 日常问候：`早上/上午/中午/下午/傍晚/晚上这会儿，我们平时会聊几句`；深夜（22 点后、5 点前）退回「到了我们平时说说话的时间」——那个点我们本来就不说话，硬说「这会儿」是假的。
+  - 计划回访：`你答应过今天/昨天/前天回来说一声`（按 `due_at` 的本地日期）。
+  - 心率事件：`今天下午手环记录里有一段心率偏高`，时间取 `sample_start`（缺失时退到 `received_at`，都没有就不带时间）。
+  - 行为痕迹：`今天下午有一段时间测得比平时密`（取 `latest`）；回避运动与夜里反复确认的句子本身就是窗口（「最近两周」「这几天的夜里」），不再叠日期词。
+- 粒度只到「哪天 + 哪个时段」，**不给钟点**：精确到分钟会让人以为我们在实时盯着他，而它其实是一段数值的汇总。
+- 凌晨 0–5 点算「昨天夜里」：否则凌晨三点说「今天夜里」，患者会以为我们在说以后。
+- 时间按 `proactive_care_settings.timezone` 转换（`processor.py` 落消息时把 `live_settings.timezone` 传进去），不是服务器时区。
+- 为什么不做成「随机的关心」：随机话术会让人反复检查（可变比率强化），我们已经在固定整点那一节写过这个反例。这里变的是**事实的时间锚点**，确定性映射、可测可审；不是措辞的随机。
+- 测试 `tests/proactive_care/test_message_reason.py`（重写）17 例：早上那句、深夜退回、计划回访的日期词、昨天深夜、凌晨两点算昨天夜里、没有时间也能说、未知方向不编方向、三类行为信号、密集测量带时段、四类任务都不含数字与「次」、同一任务同一时刻两次结果一致。
+- 验证：`tests/proactive_care` 全部通过（`test_message_reason` 17 + `test_processor` 22 共 39 例先跑）；`ruff` All checks passed；后端全量 707 passed（5 例仍是 Windows 上 `asyncio.create_subprocess_exec` 的已知限制）。
