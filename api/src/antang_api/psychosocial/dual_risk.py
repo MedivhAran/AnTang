@@ -38,6 +38,14 @@ LABEL_LABELS: dict[str, str] = {
     "felt_only": "血糖不算危险，他很怕",
     "neither": "这一时刻两边都不高",
 }
+# 给患者自己看的那一版。模型上下文里用上面的第三人称（「他没感觉到」），
+# 他自己页面上必须说「你」——同一张卡上写「他没觉得」会像在说别人。
+PATIENT_LABEL_LABELS: dict[str, str] = {
+    "both": "血糖偏离得厉害，你也感觉到了",
+    "silent": "血糖偏离得厉害，你没觉得",
+    "felt_only": "血糖不算离谱，你却很怕",
+    "neither": "这一时刻两边都不算高",
+}
 
 # 54 mg/dL（3.0 mmol/L）以下按 ADA 的说法属于「需要马上处理」的水平，不再是
 # 「偏低一点」。上限用 250 mg/dL：他刚吃过高碳水时冲到这个数是常见的，单独一个
@@ -112,6 +120,7 @@ async def record_annotation(
     measured_at: datetime,
     physiological_risk: str,
     felt_risk: str,
+    value_mg_dl: int | None = None,
     glucose_reading_id=None,
     source_message_id=None,
     note: str = "",
@@ -123,6 +132,7 @@ async def record_annotation(
         user_id=user_id,
         glucose_reading_id=glucose_reading_id,
         measured_at=measured_at,
+        value_mg_dl=value_mg_dl,
         physiological_risk=view.physiological,
         felt_risk=view.felt,
         label=view.label,

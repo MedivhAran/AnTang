@@ -29,8 +29,10 @@ from antang_api.psychosocial.dual_risk import (
     classify_label,
     describe,
     physiological_risk,
+    record_annotation,
     render_dual_risk_context,
 )
+from antang_api.routers.health_profile import get_dual_risk
 from antang_api.tools.dual_risk import RECORD_DUAL_RISK_TOOL_NAME, build_dual_risk_tool
 
 
@@ -263,3 +265,77 @@ def test_the_tool_name_is_stable() -> None:
         "measured_at",
         "note",
     }
+
+
+@pytest.mark.asyncio
+async def test_the_number_is_kept_even_when_the_reading_is_gone(
+    db_session: AsyncSession,
+) -> None:
+    # 读数会被撤回、被删；「当时血糖 3.2」是这次对照的一半，不能跟着一起没。
+    user = await _create_user(db_session, "dual_value")
+    tool = _coroutine(build_dual_risk_tool(cast(Any, _Sessions(db_session))))
+
+    await tool(
+        runtime=_runtime(user.id),
+        felt_risk="none",
+        value_mmol=3.2,
+        measured_at="2026-11-02T03:10:00+08:00",
+    )
+
+    stored = (await db_session.scalars(select(RiskAnnotation))).one()
+    assert stored.value_mg_dl == 58
+    assert stored.glucose_reading_id is None
+
+
+@pytest.mark.asyncio
+async def test_the_read_only_list_shows_only_my_last_thirty_days(
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session, "dual_list")
+    stranger = await _create_user(db_session, "dual_list_other")
+    now = datetime.now(timezone.utc)
+    await record_annotation(
+        db_session,
+        user_id=user.id,
+        measured_at=now - timedelta(days=2),
+        physiological_risk="high",
+        felt_risk="none",
+        value_mg_dl=50,
+    )
+    await record_annotation(
+        db_session,
+        user_id=user.id,
+        measured_at=now - timedelta(days=40),
+        physiological_risk="none",
+        felt_risk="strong",
+        value_mg_dl=140,
+    )
+    await record_annotation(
+        db_session,
+        user_id=stranger.id,
+        measured_at=now - timedelta(days=1),
+        physiological_risk="high",
+        felt_risk="strong",
+        value_mg_dl=52,
+    )
+    await db_session.commit()
+
+    response = await get_dual_risk(user=user, session=db_session)
+
+    assert [entry.label for entry in response.entries] == ["silent"]
+    entry = response.entries[0]
+    assert entry.value_mg_dl == 50
+    # 给他自己看的句子用「你」，不是「他没觉得」。
+    assert entry.label_text == "血糖偏离得厉害，你没觉得"
+
+
+@pytest.mark.asyncio
+async def test_the_read_only_list_is_empty_before_he_says_anything(
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session, "dual_empty")
+
+    response = await get_dual_risk(user=user, session=db_session)
+
+    assert response.entries == []
+

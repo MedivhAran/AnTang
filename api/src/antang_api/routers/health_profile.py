@@ -93,6 +93,12 @@ from antang_api.psychosocial.graphs import (
     RELATION_LABELS,
     graph_snapshot,
 )
+from antang_api.psychosocial.dual_risk import (
+    PATIENT_LABEL_LABELS,
+    FeltRisk,
+    PhysiologicalRisk,
+    RiskLabel,
+)
 from antang_api.psychosocial import (
     WHO5_INSTRUMENT,
     Instrument,
@@ -113,6 +119,7 @@ from antang_api.models import (
     ProfileChangeMode,
     ProfileChangeStatus,
     PsychosocialAssessment,
+    RiskAnnotation,
     User,
     WearableRecordType,
 )
@@ -124,6 +131,8 @@ from antang_api.schemas.health_profile import (
     CaseGraphEdgeResponse,
     CaseGraphNodeResponse,
     CaseGraphResponse,
+    DualRiskEntryResponse,
+    DualRiskListResponse,
     FearSummaryResponse,
     HealthProfileChangeRequest,
     HealthProfileChangeResponse,
@@ -1298,3 +1307,46 @@ async def get_case_graph(
         if isinstance(edge, dict)
     ]
     return CaseGraphResponse(nodes=nodes, edges=edges)
+
+
+# 只给最近 30 天：再往前翻，「那天到底有没有感觉」多半已经记不清，摆出来只会让人
+# 觉得被翻旧账。上限 60 条是兜底，正常一个月不会到。
+DUAL_RISK_WINDOW_DAYS = 30
+DUAL_RISK_LIMIT = 60
+
+
+@router.get("/dual-risk", response_model=DualRiskListResponse)
+async def get_dual_risk(
+    user: Annotated[User, Depends(get_patient_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DualRiskListResponse:
+    """他自己说过的「当时血糖多少 × 当时有没有感觉」，逐条只读。
+
+    不做汇总：把「这个月 4 次、其中 2 次没觉得」写在上面，它就变成了要完成的
+    指标；而他要认出的是那几个具体的时刻。也不提供写入——要改就在对话里再说一次。
+    """
+
+    since = datetime.now(UTC) - timedelta(days=DUAL_RISK_WINDOW_DAYS)
+    rows = await session.scalars(
+        select(RiskAnnotation)
+        .where(
+            RiskAnnotation.user_id == user.id,
+            RiskAnnotation.measured_at >= since,
+        )
+        .order_by(RiskAnnotation.measured_at.desc(), RiskAnnotation.id.desc())
+        .limit(DUAL_RISK_LIMIT)
+    )
+    return DualRiskListResponse(
+        entries=[
+            DualRiskEntryResponse(
+                id=row.id,
+                measured_at=row.measured_at,
+                value_mg_dl=row.value_mg_dl,
+                physiological_risk=cast(PhysiologicalRisk, row.physiological_risk),
+                felt_risk=cast(FeltRisk, row.felt_risk),
+                label=cast(RiskLabel, row.label),
+                label_text=PATIENT_LABEL_LABELS.get(row.label, row.label),
+            )
+            for row in rows
+        ]
+    )

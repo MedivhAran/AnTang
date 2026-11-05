@@ -94,6 +94,10 @@ class RiskAnnotation(Base):
             "label IN ('both', 'silent', 'felt_only', 'neither')",
             name="ck_risk_annotations_label",
         ),
+        CheckConstraint(
+            "value_mg_dl IS NULL OR (value_mg_dl >= 20 AND value_mg_dl <= 600)",
+            name="ck_risk_annotations_value",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -107,6 +111,9 @@ class RiskAnnotation(Base):
         ForeignKey("glucose_readings.id", ondelete="SET NULL"), nullable=True
     )
     measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # 数字单独存一份：那条读数可能被撤回或删掉，而「当时血糖 3.2」是这次对照的一半，
+    # 跟着读数一起消失，患者回看时就只剩「血糖低」这种没头没尾的话。
+    value_mg_dl: Mapped[int | None] = mapped_column(Integer, nullable=True)
     physiological_risk: Mapped[str] = mapped_column(String(16))
     felt_risk: Mapped[str] = mapped_column(String(16))
     label: Mapped[str] = mapped_column(String(16))

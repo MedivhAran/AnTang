@@ -791,3 +791,27 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 测试 `tests/proactive_care/test_message_reason.py`（重写）17 例：早上那句、深夜退回、计划回访的日期词、昨天深夜、凌晨两点算昨天夜里、没有时间也能说、未知方向不编方向、三类行为信号、密集测量带时段、四类任务都不含数字与「次」、同一任务同一时刻两次结果一致。
 - 验证：`tests/proactive_care` 全部通过（`test_message_reason` 17 + `test_processor` 22 共 39 例先跑）；`ruff` All checks passed；后端全量 707 passed（5 例仍是 Windows 上 `asyncio.create_subprocess_exec` 的已知限制）。
 - 已部署（2026-11-05 20:55）：镜像 `antang-api:deploy-20261105-205114`，`/health` 返回 `{"status":"ok","mode":"full"}`；容器内 `reasons.py` 已含新句、`processor.py` 两处传入 `timezone_name`。本次无迁移，`alembic_version` 仍是 `t9c0d1e2f3a4`。
+
+### 2026-11-05（二）：「血糖多少」和「当时有没有感觉」并排放到他自己页面上
+
+事件级双风险的写入早就有了（10-02 的 `risk_annotations` + `record_dual_risk` 工具），
+但他自己看不到——只能在对话里听着我们说。这一节把它变成一张只读卡。
+
+- 接口 `GET /api/v1/health-profile/dual-risk`（`routers/health_profile.py`）：最近 30 天、
+  逐条、最新在上、上限 60 条。不返回任何汇总（次数、比例、档位分布都不给）。
+  句子由服务端给（`label_text`），但用**第二人称**：`PATIENT_LABEL_LABELS` 里是
+  「血糖偏离得厉害，你没觉得」，模型上下文里的 `LABEL_LABELS` 仍是第三人称
+  「他没感觉到」。同一个标签两套说法是有意的：他页面上的句子不能像在说别人。
+- 标注里单独存一份数字：`risk_annotations.value_mg_dl`（迁移 `u1d2e3f4a5b6`，
+  可空 + CHECK 20–600，回填从 `glucose_readings` 取）。原来只存外键，读数一撤回
+  或删除，「当时血糖 3.2」就跟着没了，只剩没头没尾的「血糖低」。
+- 手机端 `apps/mobile/src/psychosocial/DualRiskSection.tsx`：标题「血糖和你的感觉」，
+  每行左侧一道色条（橙色 = 血糖偏了但他没觉得，蓝色 = 血糖不算偏但他很难受），
+  行里只留句子与「时间 · 3.2 mmol/L」，底部说明「不打分，也不给建议」。空态直接
+  告诉他怎么说会被记下来。同时把已经写好但一直没挂上去的 `CaseGraphSection`
+  也挂到心理页——之前它只有测试，界面上根本看不到。
+- 验证：后端 `tests/test_dual_risk.py` 28 例（新增三条：数字单独留、只给自己最近
+  30 天、空列表）；`ruff` 干净、`pyright` 0 errors；手机端 `src/psychosocial` 与
+  `src/api/client.test.ts` 全过，`tsc --noEmit` 无输出。
+- 还没做：把 `silent` 一档接进主动关怀的语气（现在只在系统提示词里作为背景）；点
+  一行回到那天记录的跳转。

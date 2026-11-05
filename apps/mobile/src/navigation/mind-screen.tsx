@@ -2,6 +2,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import type { ApiClient } from "../api/client";
 import { FearBehaviorSection } from "../fear/FearBehaviorSection";
+import { CaseGraphSection } from "../psychosocial/CaseGraphSection";
+import { DualRiskSection } from "../psychosocial/DualRiskSection";
 import { PsychosocialSection } from "../psychosocial/PsychosocialSection";
 import { colors, radii, spacing, typefaces } from "../ui/theme";
 
@@ -12,6 +14,8 @@ type Props = {
     | "getPsychosocialInstrument"
     | "getWho5Instrument"
     | "recordPsychosocialAssessment"
+    | "getCaseGraph"
+    | "getDualRiskEntries"
     | "getFearSummary"
     | "getFearBehaviorLogs"
     | "getBeliefEvents"
@@ -47,6 +51,10 @@ export function MindScreen({ api, onOpenCareSettings, visible = true }: Props) {
           这里的记录全部来自你主动说过的内容，不用打卡，也不打分。
         </Text>
       </View>
+
+      <DualRiskSection api={api} />
+
+      <CaseGraphSection api={api} />
 
       <PsychosocialSection api={api} />
 

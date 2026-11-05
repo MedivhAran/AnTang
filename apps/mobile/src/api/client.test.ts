@@ -1343,3 +1343,55 @@ describe('ApiClient glucose readings', () => {
     expect(reading.measuredPrecision).toBe('exact');
   });
 });
+
+test('the dual-risk list keeps the numbers and the feeling apart', async () => {
+  const store = new MemoryTokenStore(oldTokens);
+  let requestedUrl = '';
+  const fetchMock = jest.fn(async (url: string) => {
+    requestedUrl = url;
+    return {
+      status: 200,
+      ok: true,
+      headers: new Headers(),
+      body: null,
+      json: async () => ({
+        entries: [
+          {
+            id: 'r1',
+            measured_at: '2026-11-02T03:10:00+08:00',
+            value_mg_dl: 58,
+            physiological_risk: 'high',
+            felt_risk: 'none',
+            label: 'silent',
+            label_text: '血糖偏离得厉害，你没觉得',
+          },
+          {
+            id: 'r2',
+            measured_at: '2026-10-29T15:40:00+08:00',
+            value_mg_dl: null,
+            physiological_risk: 'none',
+            felt_risk: 'some',
+            label: 'felt_only',
+            label_text: '血糖不算离谱，你却很怕',
+          },
+        ],
+      }),
+    } as Awaited<ReturnType<FetchFunction>>;
+  });
+
+  const client = new ApiClient(
+    'http://api.test',
+    store,
+    jest.fn(),
+    fetchMock as unknown as FetchFunction,
+  );
+
+  const entries = await client.getDualRiskEntries();
+
+  expect(requestedUrl).toContain('/api/v1/health-profile/dual-risk');
+  expect(entries).toHaveLength(2);
+  expect(entries[0].label).toBe('silent');
+  expect(entries[0].valueMgDl).toBe(58);
+  expect(entries[1].valueMgDl).toBeNull();
+  expect(entries[1].labelText).toBe('血糖不算离谱，你却很怕');
+});

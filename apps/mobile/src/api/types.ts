@@ -2726,3 +2726,43 @@ export function parseCaseGraph(value: unknown): CaseGraph {
     }),
   };
 }
+
+/** 一次「当时血糖多少」与「当时有没有感觉」的对照。 */
+export type DualRiskLabel = 'both' | 'silent' | 'felt_only' | 'neither';
+
+export type DualRiskEntry = {
+  id: string;
+  measuredAt: string;
+  valueMgDl: number | null;
+  label: DualRiskLabel;
+  labelText: string;
+};
+
+const DUAL_RISK_LABELS: readonly string[] = [
+  'both',
+  'silent',
+  'felt_only',
+  'neither',
+];
+
+/**
+ * 服务端已经把标签算好了（`label`）并给了一句第二人称的话（`label_text`）。
+ * 认不出的标签退回 `neither`：宁可显示得平淡，也不要照着未知值编一个结论。
+ */
+export function parseDualRiskEntries(value: unknown): DualRiskEntry[] {
+  const data = objectValue(value, 'dual risk');
+  const items = Array.isArray(data.entries) ? data.entries : [];
+  return items.map((item) => {
+    const entry = objectValue(item, 'dual risk entry');
+    const rawLabel = String(entry.label ?? '');
+    return {
+      id: String(entry.id ?? ''),
+      measuredAt: String(entry.measured_at ?? ''),
+      valueMgDl: typeof entry.value_mg_dl === 'number' ? entry.value_mg_dl : null,
+      label: (DUAL_RISK_LABELS.includes(rawLabel)
+        ? rawLabel
+        : 'neither') as DualRiskLabel,
+      labelText: String(entry.label_text ?? ''),
+    };
+  });
+}

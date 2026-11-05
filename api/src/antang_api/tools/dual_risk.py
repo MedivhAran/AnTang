@@ -145,6 +145,7 @@ def build_dual_risk_tool(
                 session,
                 user_id=runtime.context.user_id,
                 measured_at=when,
+                value_mg_dl=value_mg_dl,
                 physiological_risk=physiological,
                 felt_risk=felt_risk,
                 glucose_reading_id=reading.id if reading is not None else None,

@@ -48,6 +48,8 @@ import {
   type PsychosocialProfile,
   type CaseGraph,
   parseCaseGraph,
+  type DualRiskEntry,
+  parseDualRiskEntries,
   parsePsychosocialProfile,
   type PsychosocialAssessmentInput,
   type PsychosocialInstrument,
@@ -1176,6 +1178,15 @@ export class ApiClient {
     );
     if (!response.ok) throw await this.apiError(response);
     return parseCaseGraph(await responseJson(response));
+  }
+
+  /** 他自己标过的「血糖多少 × 当时有没有感觉」，最近 30 天，只读。 */
+  async getDualRiskEntries(): Promise<DualRiskEntry[]> {
+    const response = await this.authorizedFetch(
+      '/api/v1/health-profile/dual-risk',
+    );
+    if (!response.ok) throw await this.apiError(response);
+    return parseDualRiskEntries(await responseJson(response));
   }
 
   async recordPsychosocialAssessment(
