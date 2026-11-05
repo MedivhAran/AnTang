@@ -775,3 +775,4 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 测试：`api/tests/proactive_care/test_message_reason.py` 12 例（含每类都有话说、不认识的来源退到中性、句子里没有数字与「次」），`test_processor.py` 里那条已发消息断言 `proactive_reason == ROUTINE_REASON` 而患者自己的消息为 `None`；手机端 `types.test.ts` 覆盖「缺字段按 null」与行为信号通知，`ChatScreen.test.tsx` 断言那行小字只出现一次。
 - 验证：后端全量 **702 passed**（5 例失败仍是 Windows 上 `asyncio.create_subprocess_exec` 的已知限制）、`ruff` All checks passed、`pyright` 0 errors；手机端 `tsc --noEmit` 无输出、相关 4 套 45 例全过。
 - 还没做：原因句是固定文案，不随「这次具体看到了什么」变化；推送正文里还没带原因（只有对话页里能看到）；`silent` 档与行为痕迹仍各自独立。
+- 已部署（2026-11-05 20:15）：镜像 `antang-api:deploy-20261105-201533`，`/health` 返回 `{"status":"ok","mode":"full"}`，`alembic_version = t9c0d1e2f3a4`；`messages.proactive_reason` 列与 `proactive_care_task_kind` 的 `behavior_signal` 值都已在线。部署日志：`/tmp/antang-deploy.log`；核对脚本 `D:\deepseek-harness\deploy\verify_reason_deploy.sh`。
