@@ -66,6 +66,7 @@ from antang_api.proactive_care.heart_rate_shadow import (
     evaluate_heart_rate_shadow,
 )
 from antang_api.proactive_care.quota import weekly_quota
+from antang_api.proactive_care.reasons import message_reason
 from antang_api.proactive_care.topics import topic_cooldown_until, topic_prefix
 from antang_api.proactive_care.service import (
     has_scheduled_routine_replacement,
@@ -1157,6 +1158,7 @@ class ProactiveCareProcessor:
                     role=MessageRole.ASSISTANT,
                     status=MessageStatus.COMPLETED,
                     content=message,
+                    proactive_reason=message_reason(task),
                     sources=[],
                     completed_at=finished_at,
                     conversation_id=care.id,

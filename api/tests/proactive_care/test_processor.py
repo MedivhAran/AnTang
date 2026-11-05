@@ -46,6 +46,7 @@ from antang_api.proactive_care.processor import (
     HEART_RATE_SAFETY_TEXT,
     ProactiveCareProcessor,
 )
+from antang_api.proactive_care.reasons import ROUTINE_REASON
 from antang_api.proactive_care.worker import ProactiveCareWorker
 from antang_api.settings import settings as app_settings
 
@@ -603,6 +604,9 @@ async def test_worker_generates_audits_and_commits_one_message(
                 "这两天过得怎么样？有空跟我说一句就好。",
             ),
         ]
+        # 患者自己的消息不带原因；主动关怀那条带着「为什么是我先开口」。
+        assert messages[0].proactive_reason is None
+        assert messages[1].proactive_reason == ROUTINE_REASON
 
         runs = list(
             await session.scalars(

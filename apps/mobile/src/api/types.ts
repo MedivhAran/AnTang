@@ -82,6 +82,8 @@ export type ChatMessage = {
   role: MessageRole;
   status: MessageStatus;
   content: string;
+  /** 主动关怀消息的「为什么是我先开口」；患者自己的对话为 null。 */
+  proactiveReason: string | null;
   sources: ChatSource[];
   attachments: ChatAttachment[];
   createdAt: string;
@@ -94,7 +96,11 @@ export type MessageHistory = {
 };
 
 export type ProactiveCareNotificationData = {
-  kind: "routine_check_in" | "plan_follow_up" | "health_event";
+  kind:
+    | "routine_check_in"
+    | "plan_follow_up"
+    | "health_event"
+    | "behavior_signal";
   messageId: string;
   deliveryId: string;
 };
@@ -862,6 +868,10 @@ function parseMessage(value: unknown): ChatMessage {
     role,
     status: status as MessageStatus,
     content: data.content,
+    proactiveReason:
+      data.proactive_reason === undefined || data.proactive_reason === null
+        ? null
+        : stringValue(data.proactive_reason, "message.proactive_reason"),
     sources: parseSources(data.sources, "message.sources"),
     attachments: Array.isArray(data.attachments)
       ? data.attachments.map((attachment, index) =>
@@ -929,7 +939,11 @@ export function parseProactiveCareNotificationData(
 ): ProactiveCareNotificationData {
   const data = objectValue(value, "notification");
   const kind = stringValue(data.kind, "notification.kind");
-  if (!["routine_check_in", "plan_follow_up", "health_event"].includes(kind)) {
+  if (
+    !["routine_check_in", "plan_follow_up", "health_event", "behavior_signal"].includes(
+      kind,
+    )
+  ) {
     throw new Error("notification.kind 无效");
   }
   return {

@@ -757,3 +757,21 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 测试环境坑（值得记）：这些用例会真写用户与任务并提交，别的用例的 Worker 会把留下的任务领走，然后在**别人的断言**里失败——看起来像新功能坏了。处理办法是插件化的：新文件加 autouse fixture 删掉自己造的用户（级联删除任务与读数），processor 用例里的 Worker 用 `behavior_sweep_interval=timedelta(days=1)` 关掉扫描。
 - 验证：`tests/proactive_care` **140 passed**、后端全量 **690 passed**（5 例失败是 Windows 上 `asyncio.create_subprocess_exec` 的已知限制）、`ruff` All checks passed、`pyright` 0 errors。
 - 还没做：手机端没有「为什么这次问你」的说明；没有把 `silent` 档（血糖危险但没感觉）与行为痕迹连起来；阈值仍待真实数据校准；扫描上限 50 是按「先扫这么多」写的，没有优先级。
+
+### 2026-11-05：先说清「这次为什么是我开口」
+
+- 患者看到的主动关怀消息与普通回答长得一样：都在「关怀消息」那段会话里，语气也一样。读者没法判断「这是他主动问的，还是我先说的」，想问一句「为什么」也没处问。这一节把原因做成消息上的一个字段。
+- 数据：`messages.proactive_reason`（`String(120)` 可空，迁移 `t9c0d1e2f3a4`，`down_revision = "s8b9c0d1e2f3"`）。患者自己开的对话永远为空——只有程序排出来的主动关怀才写。
+- 谁来写：`api/src/antang_api/proactive_care/reasons.py` 的 `message_reason(task)`，按任务来源给固定句子：
+  - 日常问候「到了我们平时说说话的时间」；计划回访「你答应过这时候回来说一声」（提醒的是他自己的承诺，不是我们在催）。
+  - 心率事件按 `health_evidence["direction"]` 给「刚才有一段心率偏高 / 偏低」，方向不明时「和平时不太一样」。
+  - 行为痕迹单独一套：`repeated_check`「这几天测得比平时密」、`exercise_avoidance`「你最近好像在躲着运动」、`night_rechecking`「这几个夜里你常常醒」；不认识的信号退到「这几天的记录有点不一样」。
+  - 刻意**不**复用 `behavior_signals.SIGNAL_LABELS`：那些是给模型看的口径（含「三小时」「14 天」这类窗口与条件），患者不需要也知道窗口是几天；这里要的是他自己能认出来的一句话。
+- 不许带数字：测试里逐类断言句子里没有阿拉伯数字、没有「次」。数值是证据，放在任务证据里；写进患者眼前这一行就变成了被盯着的感觉。
+- 写入位置：`processor.py` 落消息时 `proactive_reason=message_reason(task)`，与正文同一次提交。它不经过模型，也不允许 Auditor 改——原因句讲的是「为什么排这条任务」，模型并不知道调度的事。
+- 出口：`ChatMessageResponse.proactive_reason`（`schemas/chat.py`，`None` 默认，旧客户端不受影响）。手机端 `ChatMessage.proactiveReason`，历史解析时缺字段按 `null` 处理（兼容老服务端）。
+- 手机端：`ChatScreen.tsx` 在气泡上方加一行小字「这次是我先开口 · 到了我们平时说说话的时间」，`accessibilityLabel` 读全句；`chat-state.ts` 里本地生成的收发消息一律 `proactiveReason: null`。
+- 顺带修一处会静默吞掉通知的：`parseProactiveCareNotificationData` 原来只认 `routine_check_in` / `plan_follow_up` / `health_event`，新加的行为信号推送会被判「kind 无效」直接抛错、点进来什么也不发生。现在四种都收，测试单独钉住。
+- 测试：`api/tests/proactive_care/test_message_reason.py` 12 例（含每类都有话说、不认识的来源退到中性、句子里没有数字与「次」），`test_processor.py` 里那条已发消息断言 `proactive_reason == ROUTINE_REASON` 而患者自己的消息为 `None`；手机端 `types.test.ts` 覆盖「缺字段按 null」与行为信号通知，`ChatScreen.test.tsx` 断言那行小字只出现一次。
+- 验证：后端全量 **702 passed**（5 例失败仍是 Windows 上 `asyncio.create_subprocess_exec` 的已知限制）、`ruff` All checks passed、`pyright` 0 errors；手机端 `tsc --noEmit` 无输出、相关 4 套 45 例全过。
+- 还没做：原因句是固定文案，不随「这次具体看到了什么」变化；推送正文里还没带原因（只有对话页里能看到）；`silent` 档与行为痕迹仍各自独立。

@@ -776,6 +776,14 @@ function ChatScreenContent({
                 key={item.id}
               />
             ))}
+            {assistant && message.proactiveReason !== null ? (
+              <Text
+                accessibilityLabel={`这次是我先开口：${message.proactiveReason}`}
+                style={styles.proactiveReason}
+              >
+                这次是我先开口 · {message.proactiveReason}
+              </Text>
+            ) : null}
             {showBubble ? (
               <View
                 style={[
@@ -1573,6 +1581,14 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xs,
     borderRadius: 0,
     backgroundColor: 'transparent',
+  },
+  // 主动关怀那几条消息先说清「为什么是我先开口」，否则患者只能猜。
+  proactiveReason: {
+    marginBottom: spacing.xs,
+    marginLeft: spacing.xs,
+    color: colors.faint,
+    fontFamily: typefaces.sans,
+    fontSize: 10,
   },
   // 第一句话还没出来时先占一个位置，别让患者对着空白以为没发出去。
   thinkingRow: {
