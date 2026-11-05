@@ -790,3 +790,4 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 - 为什么不做成「随机的关心」：随机话术会让人反复检查（可变比率强化），我们已经在固定整点那一节写过这个反例。这里变的是**事实的时间锚点**，确定性映射、可测可审；不是措辞的随机。
 - 测试 `tests/proactive_care/test_message_reason.py`（重写）17 例：早上那句、深夜退回、计划回访的日期词、昨天深夜、凌晨两点算昨天夜里、没有时间也能说、未知方向不编方向、三类行为信号、密集测量带时段、四类任务都不含数字与「次」、同一任务同一时刻两次结果一致。
 - 验证：`tests/proactive_care` 全部通过（`test_message_reason` 17 + `test_processor` 22 共 39 例先跑）；`ruff` All checks passed；后端全量 707 passed（5 例仍是 Windows 上 `asyncio.create_subprocess_exec` 的已知限制）。
+- 已部署（2026-11-05 20:55）：镜像 `antang-api:deploy-20261105-205114`，`/health` 返回 `{"status":"ok","mode":"full"}`；容器内 `reasons.py` 已含新句、`processor.py` 两处传入 `timezone_name`。本次无迁移，`alembic_version` 仍是 `t9c0d1e2f3a4`。
