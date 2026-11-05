@@ -5,6 +5,7 @@ from antang_api.psychosocial.dual_risk import (
     recent_annotations,
     record_annotation,
     render_dual_risk_context,
+    render_sensation_context,
 )
 from antang_api.psychosocial.instrument import (
     WHO5_INSTRUMENT,
@@ -41,6 +42,7 @@ __all__ = [
     "record_assessment",
     "recent_annotations",
     "render_dual_risk_context",
+    "render_sensation_context",
     "render_guidance",
     "score_answers",
     "score_who5",

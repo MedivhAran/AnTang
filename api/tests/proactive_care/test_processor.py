@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from langchain_core.messages import AIMessage, HumanMessage
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from antang_api.agents.proactive_care import (
     PROACTIVE_CARE_AGENT_NAME,
@@ -37,6 +37,7 @@ from antang_api.models import (
     PushInstallation,
     PushPermissionState,
     PushPlatform,
+    RiskAnnotation,
     RoutineCareCadence,
     WearableImport,
     WearableObservation,
@@ -1784,6 +1785,81 @@ async def test_proactive_context_carries_recent_behaviors_and_beliefs(
     assert "低血糖会让我昏迷" in behavior_context
     # 次数只供起草时决定问什么，不允许出现在发给用户的话里。
     assert "不要在回复里报这些次数" in behavior_context
+
+
+async def test_proactive_context_knows_when_he_could_not_feel_a_low(
+    committed_user_id: UUID,
+) -> None:
+    """他有过「低下去却没感觉」的时刻时，主动消息要先问身体，而不是数字。"""
+
+    now = datetime.now(timezone.utc)
+    async with session_factory() as session:
+        care_settings = await session.get(ProactiveCareSettings, committed_user_id)
+        assert care_settings is not None
+        care_settings.quiet_hours_start = datetime.min.time()
+        care_settings.quiet_hours_end = datetime.min.time()
+        care_settings.routine_cadence = RoutineCareCadence.EVERY_3_DAYS
+        # 别的用例可能留下排着队的任务；Worker 一次只领一条，先清掉，免得抢走。
+        await session.execute(
+            update(ProactiveCareTask)
+            .where(
+                ProactiveCareTask.status == ProactiveCareTaskStatus.SCHEDULED,
+                ProactiveCareTask.user_id != committed_user_id,
+            )
+            .values(
+                status=ProactiveCareTaskStatus.CANCELLED,
+                outcome_reason="test_cleanup",
+            )
+        )
+        session.add_all(
+            [
+                RiskAnnotation(
+                    user_id=committed_user_id,
+                    measured_at=now - timedelta(days=2, hours=3),
+                    value_mg_dl=58,
+                    physiological_risk="high",
+                    felt_risk="none",
+                    label="silent",
+                ),
+                ProactiveCareTask(
+                    user_id=committed_user_id,
+                    kind=ProactiveCareTaskKind.ROUTINE_CHECK_IN,
+                    status=ProactiveCareTaskStatus.SCHEDULED,
+                    due_at=now - timedelta(minutes=1),
+                    expires_at=now + timedelta(hours=12),
+                ),
+            ]
+        )
+        await session.commit()
+
+    draft_graph = FakeGraph(
+        ProactiveCareDecision(
+            action="send",
+            message="这两天有没有过心里发虚、手心冒汗的时候？",
+            reason="他有没察觉到低血糖的时刻",
+        )
+    )
+    processor = ProactiveCareProcessor(
+        agent=cast(Any, draft_graph),
+        auditor=cast(
+            Any,
+            FakeGraph(ProactiveCareAudit(decision="approve", reason="内容克制")),
+        ),
+        companion_memory=cast(Any, FakeMemory()),
+        token_model=cast(Any, FakeTokenModel()),
+        model_name="test-model",
+    )
+
+    assert (
+        await ProactiveCareWorker(process_task=processor.process).run_once(now=now)
+        is True
+    )
+
+    payload = json.loads(draft_graph.calls[0][0]["messages"][0].content)
+    sensation_context = payload["sensation_context"]
+    assert "[他有过血糖已经偏低、身上却没报警的时刻]" in sensation_context
+    assert "3.2 mmol/L，当时他没觉得" in sensation_context
+    assert "出汗、心慌、发虚" in sensation_context
 
 
 async def _seed_sent_routine_contacts(

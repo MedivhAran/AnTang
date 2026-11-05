@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import select
@@ -172,5 +172,36 @@ def render_dual_risk_context(annotations: list[RiskAnnotation]) -> str:
         lines.append(f"{when} {label}")
     lines.append(
         "这些是他自己当时的说法，不要拿来当结论；他没提，就不要主动说「你上次没感觉到」。"
+    )
+    return "\n".join(lines)
+
+
+# 主动关怀要照顾的是「察觉」这件事，不是复述最近的数字。所以这里只挑
+# silent 那一档：血糖已经低下去、他身上却没有报警。90 天是够长到能看出来，
+# 又短到不会把一年前的几次当成现在的问题。
+SENSATION_LOOKBACK = timedelta(days=90)
+_SENSATION_LINES = 3
+
+
+def render_sensation_context(annotations: list[RiskAnnotation]) -> str:
+    """给主动关怀 Agent 的一小段：这个人有过「低了却没感觉」的时刻。
+
+    没有这一档就返回空串——不能因为「没有记录」就说他没有察觉问题。
+    """
+
+    silent = [item for item in annotations if item.label == "silent"]
+    if not silent:
+        return ""
+    lines = ["[他有过血糖已经偏低、身上却没报警的时刻]"]
+    for item in silent[:_SENSATION_LINES]:
+        when = item.measured_at.strftime("%m-%d %H:%M")
+        if item.value_mg_dl is None:
+            lines.append(f"{when} 当时他没觉得")
+        else:
+            mmol = item.value_mg_dl / 18
+            lines.append(f"{when} {mmol:.1f} mmol/L，当时他没觉得")
+    lines.append(
+        "需要问身体的时候，先问「有没有出汗、心慌、发虚」，别先问数字；"
+        "不要把这些次数念给他，也不要只说「注意低血糖」——这句他已经听过很多遍。"
     )
     return "\n".join(lines)

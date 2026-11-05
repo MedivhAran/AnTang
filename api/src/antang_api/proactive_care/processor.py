@@ -35,8 +35,11 @@ from antang_api.database import (
 from antang_api.health_profile.service import load_health_profile_snapshot
 from antang_api.psychosocial import (
     read_latest_assessment,
+    recent_annotations,
     render_guidance,
+    render_sensation_context,
 )
+from antang_api.psychosocial.dual_risk import SENSATION_LOOKBACK
 from antang_api.models import (
     AgentRun,
     AgentRunStatus,
@@ -677,6 +680,15 @@ class ProactiveCareProcessor:
                 # 否则主动消息不知道「这个人最近每晚查三次血糖」，关怀会踩空。
                 "behavior_context": render_behavior_context(
                     await read_fear_summary(session, user_id=task.user_id),
+                ),
+                # 他有过「血糖低下去、身上没报警」的时刻时，该问的是感觉，不是数字。
+                "sensation_context": render_sensation_context(
+                    await recent_annotations(
+                        session,
+                        user_id=task.user_id,
+                        since=datetime.now(timezone.utc) - SENSATION_LOOKBACK,
+                        limit=10,
+                    ),
                 ),
             }
 

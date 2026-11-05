@@ -26,11 +26,13 @@ from antang_api.models import (
     User,
 )
 from antang_api.psychosocial.dual_risk import (
+    SENSATION_LOOKBACK,
     classify_label,
     describe,
     physiological_risk,
     record_annotation,
     render_dual_risk_context,
+    render_sensation_context,
 )
 from antang_api.routers.health_profile import get_dual_risk
 from antang_api.tools.dual_risk import RECORD_DUAL_RISK_TOOL_NAME, build_dual_risk_tool
@@ -150,6 +152,48 @@ def test_the_context_lines_do_not_turn_them_into_conclusions() -> None:
 
     assert "10-30 03:10 血糖危险，他没感觉到" in rendered
     assert "不要拿来当结论" in rendered
+
+
+def test_the_sensation_lines_ask_about_the_body_not_the_number() -> None:
+    class _Silent:
+        label = "silent"
+        measured_at = datetime(2026, 11, 2, 3, 10, tzinfo=timezone.utc)
+        value_mg_dl = 58
+
+    rendered = render_sensation_context(cast(Any, [_Silent()]))
+
+    assert "11-02 03:10 3.2 mmol/L，当时他没觉得" in rendered
+    assert "出汗、心慌、发虚" in rendered
+    assert "不要把这些次数念给他" in rendered
+    # 数字是给模型判断用的，不是让它在消息里背出来的。
+    assert "1 次" not in rendered
+
+
+def test_without_a_silent_moment_there_is_nothing_to_say() -> None:
+    class _Felt:
+        label = "felt_only"
+        measured_at = datetime(2026, 11, 2, 15, 40, tzinfo=timezone.utc)
+        value_mg_dl = 65
+
+    # 没有这一档不等于「他察觉正常」，所以这里必须是空串而不是一句结论。
+    assert render_sensation_context(cast(Any, [_Felt()])) == ""
+    assert render_sensation_context([]) == ""
+
+
+def test_a_silent_moment_without_a_number_still_reads_whole() -> None:
+    class _NoNumber:
+        label = "silent"
+        measured_at = datetime(2026, 10, 20, 22, 5, tzinfo=timezone.utc)
+        value_mg_dl = None
+
+    rendered = render_sensation_context(cast(Any, [_NoNumber()]))
+
+    assert "10-20 22:05 当时他没觉得" in rendered
+    assert "mmol/L" not in rendered
+
+
+def test_the_sensation_window_is_ninety_days() -> None:
+    assert SENSATION_LOOKBACK == timedelta(days=90)
 
 
 @pytest.mark.asyncio
