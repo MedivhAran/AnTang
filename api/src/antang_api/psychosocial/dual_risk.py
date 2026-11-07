@@ -13,7 +13,13 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from antang_api.models import RiskAnnotation
+from antang_api.models import (
+    ProactiveCareSettings,
+    ProactiveCareTask,
+    ProactiveCareTaskKind,
+    ProactiveCareTaskStatus,
+    RiskAnnotation,
+)
 
 PhysiologicalRisk = Literal["none", "moderate", "high"]
 FeltRisk = Literal["none", "some", "strong"]
@@ -205,3 +211,91 @@ def render_sensation_context(annotations: list[RiskAnnotation]) -> str:
         "不要把这些次数念给他，也不要只说「注意低血糖」——这句他已经听过很多遍。"
     )
     return "\n".join(lines)
+
+
+# ── 回访 ────────────────────────────────────────────────────────────────────
+#
+# 只有 silent 这一档回访：血糖已经低到该处理、他却什么都没感觉到。这种时刻
+# 过去就过去，真正要紧的是接下来几天——有没有再低过、有没有告诉身边的人、
+# 手边有没有放糖。三天是「还记得那天」和「还没彻底翻篇」之间的折中；
+# 当天再问一遍像追问，一周后再问他已经想不起细节了。
+FOLLOW_UP_AFTER = timedelta(days=3)
+FOLLOW_UP_TTL = timedelta(days=1)
+FOLLOW_UP_RULE_ID = "dual_risk_follow_up"
+FOLLOW_UP_RULE_VERSION = "dual-risk-follow-up-v1"
+
+
+def needs_follow_up(annotation: RiskAnnotation) -> bool:
+    """这一次值不值得几天后再问一句。
+
+    只在「危险但他没感觉」时为真。`both`（感觉到了）他当场就会处理，`felt_only`
+    （不危险但很怕）要处理的是怕，不是回访低血糖；`neither` 什么都不用问。
+    """
+
+    return annotation.label == "silent"
+
+
+def follow_up_topic(annotation: RiskAnnotation) -> str:
+    """同一件事只回访一次：键里带标注 id，不同夜晚互不占位。"""
+
+    return f"dual-risk:{annotation.id}"
+
+
+async def queue_follow_up(
+    session: AsyncSession,
+    *,
+    user_id,
+    annotation: RiskAnnotation,
+    now: datetime,
+) -> ProactiveCareTask | None:
+    """给一次 silent 标注排一次回访；已经有排着的就不重复排。
+
+    返回新建的任务（或已存在的那条）；不排则返回 None。不排的情况：这一档不需要
+    回访、患者关掉了健康事件、这次标注本身太旧（补记的旧事没必要再回访）。
+    """
+
+    if not needs_follow_up(annotation):
+        return None
+    settings = await session.get(ProactiveCareSettings, user_id)
+    if settings is None or not settings.health_events_enabled:
+        return None
+    due_at = annotation.measured_at + FOLLOW_UP_AFTER
+    if due_at <= now:
+        # 补记的是好几天前的事：那时该问的已经错过了，不补一个「三天前该问的」。
+        return None
+
+    key = follow_up_topic(annotation)
+    existing = await session.scalar(
+        select(ProactiveCareTask.id).where(
+            ProactiveCareTask.user_id == user_id,
+            ProactiveCareTask.health_event_key == key,
+            ProactiveCareTask.status.in_(
+                (
+                    ProactiveCareTaskStatus.SCHEDULED,
+                    ProactiveCareTaskStatus.RUNNING,
+                )
+            ),
+        )
+    )
+    if existing is not None:
+        return None
+
+    task = ProactiveCareTask(
+        user_id=user_id,
+        kind=ProactiveCareTaskKind.DUAL_RISK_FOLLOW_UP,
+        status=ProactiveCareTaskStatus.SCHEDULED,
+        due_at=due_at,
+        expires_at=due_at + FOLLOW_UP_TTL,
+        health_event_key=key,
+        health_evidence={
+            "annotation_id": str(annotation.id),
+            "value_mg_dl": annotation.value_mg_dl,
+            "measured_at": annotation.measured_at.isoformat(),
+            "label": annotation.label,
+        },
+        rule_id=FOLLOW_UP_RULE_ID,
+        rule_version=FOLLOW_UP_RULE_VERSION,
+    )
+    session.add(task)
+    await session.flush()
+    return task

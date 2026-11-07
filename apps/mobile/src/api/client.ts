@@ -90,6 +90,16 @@ import {
   parseCgmImportResult,
   parseCgmSeries,
 } from "./types";
+import {
+  parseActivityLogEntry,
+  parseActivityLogs,
+  parseSleepLogEntry,
+  parseSleepLogs,
+  type ActivityIntensity,
+  type ActivityKind,
+  type ActivityLogEntry,
+  type SleepLogEntry,
+} from "./logs";
 
 export type FetchFunction = (
   input: string | URL,
@@ -1082,6 +1092,86 @@ export class ApiClient {
   async deleteMealLog(id: string): Promise<void> {
     const response = await this.authorizedFetch(
       `/api/v1/health-profile/meal-logs/${id}`,
+      { method: "DELETE" },
+    );
+    if (!response.ok) throw await this.apiError(response);
+  }
+
+  async getActivityLogs(days = 7, signal?: AbortSignal): Promise<ActivityLogEntry[]> {
+    const response = await this.authorizedFetch(
+      `/api/v1/health-profile/activity-logs?days=${days}`,
+      { signal },
+    );
+    if (!response.ok) throw await this.apiError(response);
+    return parseActivityLogs(await responseJson(response));
+  }
+
+  async recordActivityLog(input: {
+    performedAt: string;
+    kind: ActivityKind;
+    minutes: number;
+    intensity: ActivityIntensity;
+    note?: string | null;
+  }): Promise<ActivityLogEntry> {
+    const response = await this.authorizedFetch(
+      "/api/v1/health-profile/activity-logs",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          performed_at: input.performedAt,
+          kind: input.kind,
+          minutes: input.minutes,
+          intensity: input.intensity,
+          ...(input.note === undefined ? {} : { note: input.note }),
+        }),
+      },
+    );
+    if (!response.ok) throw await this.apiError(response);
+    return parseActivityLogEntry(await responseJson(response));
+  }
+
+  async deleteActivityLog(id: string): Promise<void> {
+    const response = await this.authorizedFetch(
+      `/api/v1/health-profile/activity-logs/${id}`,
+      { method: "DELETE" },
+    );
+    if (!response.ok) throw await this.apiError(response);
+  }
+
+  async getSleepLogs(days = 7, signal?: AbortSignal): Promise<SleepLogEntry[]> {
+    const response = await this.authorizedFetch(
+      `/api/v1/health-profile/sleep-logs?days=${days}`,
+      { signal },
+    );
+    if (!response.ok) throw await this.apiError(response);
+    return parseSleepLogs(await responseJson(response));
+  }
+
+  async recordSleepLog(input: {
+    fellAsleepAt: string;
+    wokeAt: string;
+    note?: string | null;
+  }): Promise<SleepLogEntry> {
+    const response = await this.authorizedFetch(
+      "/api/v1/health-profile/sleep-logs",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fell_asleep_at: input.fellAsleepAt,
+          woke_at: input.wokeAt,
+          ...(input.note === undefined ? {} : { note: input.note }),
+        }),
+      },
+    );
+    if (!response.ok) throw await this.apiError(response);
+    return parseSleepLogEntry(await responseJson(response));
+  }
+
+  async deleteSleepLog(id: string): Promise<void> {
+    const response = await this.authorizedFetch(
+      `/api/v1/health-profile/sleep-logs/${id}`,
       { method: "DELETE" },
     );
     if (!response.ok) throw await this.apiError(response);

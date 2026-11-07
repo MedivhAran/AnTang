@@ -132,6 +132,17 @@ def _signal_reason(task: ProactiveCareTask, now: datetime, zone: ZoneInfo) -> st
     return SIGNAL_FALLBACK_REASON
 
 
+def _dual_risk_reason(task: ProactiveCareTask, now: datetime, zone: ZoneInfo) -> str:
+    evidence = task.health_evidence or {}
+    when = _when(evidence.get("measured_at"), now, zone)
+    # 只说「那一晚」和「后来」：不复述数值，也不说「你没察觉到」——那句话本身
+    # 就是他没做到的事，放在原因里像在提醒他的失误。句子刻意不带「次」字，
+    # 否则读起来像在记数。
+    if when:
+        return f"{when}低了却没什么感觉，想问问后来怎么样"
+    return "前几天有一晚低了却没什么感觉，想问问后来怎么样"
+
+
 def message_reason(
     task: ProactiveCareTask,
     *,
@@ -158,4 +169,6 @@ def message_reason(
         return _health_reason(task, local_now, zone)
     if task.kind == ProactiveCareTaskKind.BEHAVIOR_SIGNAL:
         return _signal_reason(task, local_now, zone)
+    if task.kind == ProactiveCareTaskKind.DUAL_RISK_FOLLOW_UP:
+        return _dual_risk_reason(task, local_now, zone)
     return SIGNAL_FALLBACK_REASON

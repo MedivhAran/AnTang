@@ -57,6 +57,12 @@ from antang_api.schemas.glucose import (
     GlucoseTargetResponse,
     GlucoseTargetUpdate,
 )
+from antang_api.schemas.activity import (
+    ActivityLogRequest,
+    ActivityLogResponse,
+    SleepLogRequest,
+    SleepLogResponse,
+)
 from antang_api.schemas.nutrition import (
     MealLogRequest,
     MealLogResponse,
@@ -111,6 +117,7 @@ from antang_api.psychosocial import (
 from antang_api.psychosocial.report import patient_assessment_response
 from antang_api.models import (
     HYPOGLYCEMIA_BELIEFS,
+    ActivityLog,
     HealthProfileChange,
     MealLog,
     MedicationLog,
@@ -120,6 +127,7 @@ from antang_api.models import (
     ProfileChangeStatus,
     PsychosocialAssessment,
     RiskAnnotation,
+    SleepLog,
     User,
     WearableRecordType,
 )
@@ -1350,3 +1358,127 @@ async def get_dual_risk(
             for row in rows
         ]
     )
+
+
+@router.post(
+    "/activity-logs",
+    response_model=ActivityLogResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_activity_log(
+    payload: ActivityLogRequest,
+    user: Annotated[User, Depends(get_patient_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ActivityLogResponse:
+    """记一次运动。只记做了什么、多久、多累，不算消耗、不评价够不够。"""
+
+    log = ActivityLog(
+        user_id=user.id,
+        performed_at=payload.performed_at,
+        kind=payload.kind,
+        minutes=payload.minutes,
+        intensity=payload.intensity,
+        note=(payload.note or "").strip() or None,
+    )
+    session.add(log)
+    await session.commit()
+    await session.refresh(log)
+    return ActivityLogResponse.model_validate(log)
+
+
+@router.get("/activity-logs", response_model=list[ActivityLogResponse])
+async def list_activity_logs(
+    user: Annotated[User, Depends(get_patient_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    days: Annotated[int, Query(ge=1, le=90)] = 7,
+) -> list[ActivityLogResponse]:
+    """按时间倒序返回最近的补记运动，供记录页展示。"""
+
+    since = datetime.now(UTC) - timedelta(days=days)
+    rows = (
+        await session.scalars(
+            select(ActivityLog)
+            .where(
+                ActivityLog.user_id == user.id,
+                ActivityLog.performed_at >= since,
+            )
+            .order_by(ActivityLog.performed_at.desc(), ActivityLog.id.desc())
+        )
+    ).all()
+    return [ActivityLogResponse.model_validate(row) for row in rows]
+
+
+@router.delete("/activity-logs/{log_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_activity_log(
+    log_id: UUID,
+    user: Annotated[User, Depends(get_patient_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """患者自己删掉一条运动记录（硬删除，无法恢复）。"""
+
+    log = await session.get(ActivityLog, log_id)
+    if log is None or log.user_id != user.id:
+        raise HTTPException(status_code=404, detail="没有这条记录")
+    await session.delete(log)
+    await session.commit()
+
+
+@router.post(
+    "/sleep-logs",
+    response_model=SleepLogResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_sleep_log(
+    payload: SleepLogRequest,
+    user: Annotated[User, Depends(get_patient_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> SleepLogResponse:
+    """记一段睡眠。只记几点睡、几点醒，不做睡眠分期。"""
+
+    log = SleepLog(
+        user_id=user.id,
+        fell_asleep_at=payload.fell_asleep_at,
+        woke_at=payload.woke_at,
+        note=(payload.note or "").strip() or None,
+    )
+    session.add(log)
+    await session.commit()
+    await session.refresh(log)
+    return SleepLogResponse.model_validate(log)
+
+
+@router.get("/sleep-logs", response_model=list[SleepLogResponse])
+async def list_sleep_logs(
+    user: Annotated[User, Depends(get_patient_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    days: Annotated[int, Query(ge=1, le=90)] = 7,
+) -> list[SleepLogResponse]:
+    """按入睡时间倒序返回最近的补记睡眠。"""
+
+    since = datetime.now(UTC) - timedelta(days=days)
+    rows = (
+        await session.scalars(
+            select(SleepLog)
+            .where(
+                SleepLog.user_id == user.id,
+                SleepLog.fell_asleep_at >= since,
+            )
+            .order_by(SleepLog.fell_asleep_at.desc(), SleepLog.id.desc())
+        )
+    ).all()
+    return [SleepLogResponse.model_validate(row) for row in rows]
+
+
+@router.delete("/sleep-logs/{log_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_sleep_log(
+    log_id: UUID,
+    user: Annotated[User, Depends(get_patient_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """患者自己删掉一条睡眠记录（硬删除，无法恢复）。"""
+
+    log = await session.get(SleepLog, log_id)
+    if log is None or log.user_id != user.id:
+        raise HTTPException(status_code=404, detail="没有这条记录")
+    await session.delete(log)
+    await session.commit()

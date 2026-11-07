@@ -16,7 +16,9 @@ from sqlalchemy import select
 
 from antang_api.database import session_factory
 from antang_api.models import (
+    BehaviorSignalRecord,
     GlucoseReading,
+    RiskAnnotation,
     User,
     ProactiveCareSettings,
     ProactiveCareTask,
@@ -167,6 +169,84 @@ async def test_a_topic_mentioned_yesterday_is_held_back() -> None:
         await session.commit()
 
     assert created == []
+
+
+async def test_calibration_records_what_would_have_been_sent() -> None:
+    user_id = await _create_user("dispatch_calibration")
+    await _add_readings(user_id, offsets_minutes=_SIX_IN_A_ROW)
+    async with session_factory() as session:
+        settings = await session.get(ProactiveCareSettings, user_id)
+        assert settings is not None
+        settings.behavior_calibration_until = NOW + timedelta(days=7)
+        await session.commit()
+
+    async with session_factory() as session:
+        created = await queue_behavior_signals(
+            session, user_id=user_id, now=NOW, timezone_name="Asia/Shanghai"
+        )
+        await session.commit()
+
+    assert created == []
+    async with session_factory() as session:
+        records = list(
+            (
+                await session.scalars(
+                    select(BehaviorSignalRecord).where(
+                        BehaviorSignalRecord.user_id == user_id
+                    )
+                )
+            ).all()
+        )
+    assert len(records) == 1
+    assert records[0].kind == "repeated_check"
+    assert records[0].dispatched is False
+    assert records[0].suppressed_reason == "calibration"
+
+    # 校准结束后，同一条痕迹就该真的排任务了。
+    async with session_factory() as session:
+        settings = await session.get(ProactiveCareSettings, user_id)
+        assert settings is not None
+        settings.behavior_calibration_until = None
+        await session.commit()
+    async with session_factory() as session:
+        created = await queue_behavior_signals(
+            session,
+            user_id=user_id,
+            now=NOW,
+            timezone_name="Asia/Shanghai",
+        )
+        await session.commit()
+    assert len(created) == 1
+
+
+async def test_a_silent_low_rides_along_with_the_signal() -> None:
+    user_id = await _create_user("dispatch_silent_link")
+    await _add_readings(user_id, offsets_minutes=_SIX_IN_A_ROW)
+    async with session_factory() as session:
+        session.add(
+            RiskAnnotation(
+                user_id=user_id,
+                measured_at=NOW - timedelta(days=2),
+                value_mg_dl=58,
+                physiological_risk="moderate",
+                felt_risk="none",
+                label="silent",
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        created = await queue_behavior_signals(
+            session, user_id=user_id, now=NOW, timezone_name="Asia/Shanghai"
+        )
+        await session.commit()
+
+    assert len(created) == 1
+    async with session_factory() as session:
+        task = await session.get(ProactiveCareTask, created[0])
+        assert task is not None
+        assert task.health_evidence is not None
+        assert task.health_evidence["silent_lows_30d"] == 1
 
 
 async def test_the_sweep_only_looks_at_recent_data_and_the_switch() -> None:

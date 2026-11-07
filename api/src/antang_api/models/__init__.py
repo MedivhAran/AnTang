@@ -44,6 +44,14 @@ from antang_api.models.health_profile import (
     ProfileTargetType,
 )
 from antang_api.models.knowledge import KnowledgeChunk, KnowledgeDocument
+from antang_api.models.activity import (
+    ACTIVITY_INTENSITIES,
+    ACTIVITY_INTENSITY_LABELS,
+    ACTIVITY_KINDS,
+    ACTIVITY_KIND_LABELS,
+    ActivityLog,
+    SleepLog,
+)
 from antang_api.models.nutrition import (
     MEAL_TYPES,
     MEDICATION_KINDS,
@@ -52,6 +60,7 @@ from antang_api.models.nutrition import (
 )
 from antang_api.models.psychosocial import PsychosocialAssessment, RiskAnnotation
 from antang_api.models.proactive_care import (
+    BehaviorSignalRecord,
     CarePlan,
     CarePlanStatus,
     ProactiveCareSettings,
@@ -119,6 +128,7 @@ __all__ = [
     "CONVERSATION_KINDS",
     "Conversation",
     "CompanionMemoryCursor",
+    "BehaviorSignalRecord",
     "CarePlan",
     "CarePlanStatus",
     "FactAssertion",
@@ -133,6 +143,12 @@ __all__ = [
     "MedicationLog",
     "MEAL_TYPES",
     "MEDICATION_KINDS",
+    "ActivityLog",
+    "SleepLog",
+    "ACTIVITY_KINDS",
+    "ACTIVITY_INTENSITIES",
+    "ACTIVITY_KIND_LABELS",
+    "ACTIVITY_INTENSITY_LABELS",
     "PersonalProfile",
     "PersonalProfileField",
     "ProfileChangeMode",

@@ -34,12 +34,14 @@ from antang_api.tools import (
     build_care_plan_tool,
     build_case_graph_tools,
     build_dual_risk_tool,
+    build_find_glucose_tool,
     build_glucose_read_tool,
     build_glucose_report_delete_tool,
     build_glucose_report_tool,
     build_glucose_write_tool,
     build_knowledge_search_tool,
     build_profile_tool,
+    build_activity_tools,
     build_record_tools,
     build_wearable_read_tool,
     build_web_tools,
@@ -106,7 +108,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 case_graph_tools = build_case_graph_tools(session_factory)
                 dual_risk_tool = build_dual_risk_tool(session_factory)
                 record_tools = build_record_tools(session_factory)
+                activity_tools = build_activity_tools(session_factory)
                 glucose_tool = build_glucose_read_tool(session_factory)
+                glucose_find_tool = build_find_glucose_tool(session_factory)
                 glucose_write_tool = build_glucose_write_tool(session_factory)
                 glucose_report_tool = build_glucose_report_tool(session_factory)
                 glucose_report_delete_tool = build_glucose_report_delete_tool(
@@ -125,12 +129,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     health_profile_delegate,
                     care_plan_tool,
                     glucose_tool,
+                    glucose_find_tool,
                     glucose_write_tool,
                     glucose_report_tool,
                     glucose_report_delete_tool,
                     *behavior_tools,
                     *case_graph_tools,
                     dual_risk_tool,
+                    *activity_tools,
                     *record_tools,
                 )
                 tool_middleware = ToolPersistenceMiddleware(

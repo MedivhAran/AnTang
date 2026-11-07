@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -265,5 +266,113 @@ def render_case_graph_context(
             "这些是他自己在前面几轮里说出来的，只用来把话接住、把追问问准；"
             "不要念给他听，不要当成诊断结论，他没主动提起时也不要说「你上次说过」。",
             *lines[-limit:],
+        ]
+    )
+
+
+@dataclass(frozen=True)
+class GraphFocus:
+    """一个值得再问一句的话题。"""
+
+    node_id: str
+    layer: str
+    kind: str
+    text: str
+    intensity: int | None
+
+    @property
+    def kind_label(self) -> str:
+        return KIND_LABELS.get(self.kind, self.kind)
+
+
+def _bigrams(text: str) -> set[str]:
+    cleaned = "".join(ch for ch in text if ch.strip() and ch not in "，。；、！？：,.;!?:")
+    return {cleaned[index : index + 2] for index in range(len(cleaned) - 1)}
+
+
+def _mentioned(text: str, said: tuple[str, ...]) -> bool:
+    """这句话是不是最近刚聊过。
+
+    患者很少原样重复自己说的话（「自习室太冷，一个人有点发慌」下次变成「自习室
+    冷得我有点发慌」），所以按两字片段的重合度判，不按原文是否包含判。
+    """
+
+    text_parts = _bigrams(text)
+    for message in said:
+        if text in message:
+            return True
+        if len(text_parts) < 4:
+            continue
+        message_parts = _bigrams(message)
+        if not message_parts:
+            continue
+        overlap = len(text_parts & message_parts) / min(
+            len(text_parts), len(message_parts)
+        )
+        if overlap >= 0.5:
+            return True
+    return False
+
+
+def choose_focus(
+    snapshot: dict[str, object],
+    *,
+    mentioned: tuple[str, ...] = (),
+    limit: int = 20,
+) -> GraphFocus | None:
+    """挑一个「他说过、但最近没被谈起」的话题。
+
+    挑法刻意简单：先看情绪（尤其强度高的），再看念头；越近的越优先。已经在最近
+    几条消息里出现过的跳过——否则主动消息会把同一个话题反复端上来。
+
+    挑不出来就返回 None：没有话题时宁可只问一句「今天怎么样」，也不要从图上
+    硬拽一条出来当借口。
+    """
+
+    raw_nodes = snapshot.get("nodes") or []
+    if not isinstance(raw_nodes, list):
+        return None
+    candidates: list[GraphFocus] = []
+    for item in raw_nodes[-limit:]:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text", "")).strip()
+        if not text:
+            continue
+        if _mentioned(text, mentioned):
+            continue
+        intensity = item.get("intensity")
+        candidates.append(
+            GraphFocus(
+                node_id=str(item.get("id")),
+                layer=str(item.get("layer")),
+                kind=str(item.get("kind")),
+                text=text,
+                intensity=intensity if isinstance(intensity, int) else None,
+            )
+        )
+    if not candidates:
+        return None
+    # 情绪优先、强度高的优先，其余按「越近越优先」保持原顺序。
+    candidates.reverse()
+    candidates.sort(
+        key=lambda focus: (focus.layer == "affective", focus.intensity or 0),
+        reverse=True,
+    )
+    return candidates[0]
+
+
+def render_graph_focus(focus: GraphFocus | None) -> str:
+    """把挑出来的话题拼成一句上下文；没有就返回空串。"""
+
+    if focus is None:
+        return ""
+    strength = f"，强度 {focus.intensity}" if focus.intensity else ""
+    return "\n".join(
+        [
+            "[他最近提过的一件心事]",
+            f"{focus.kind_label}：{focus.text}{strength}",
+            "要开口的话，可以顺着它问一句现在的样子；不要引用他的原话，"
+            "不要说「你上次说过」，也不要把它当成结论。他今天显然不想聊这个，就换回日常的问候。",
         ]
     )

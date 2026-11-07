@@ -23,6 +23,7 @@ from antang_api.psychosocial.dual_risk import (
     PHYSIOLOGICAL_LABELS,
     describe,
     physiological_risk,
+    queue_follow_up,
     record_annotation,
 )
 
@@ -152,6 +153,13 @@ def build_dual_risk_tool(
                 source_message_id=await _trigger_message_id(session, runtime),
                 note=note or "",
             )
+            # 「低了却没感觉」这一档排一次几天后的回访；同一夜只排一次。
+            follow_up = await queue_follow_up(
+                session,
+                user_id=runtime.context.user_id,
+                annotation=annotation,
+                now=datetime.now(timezone.utc),
+            )
             await session.commit()
             return {
                 "recorded": True,
@@ -161,6 +169,7 @@ def build_dual_risk_tool(
                 "felt": view.felt,
                 "when": when.isoformat(),
                 "linked_reading": reading is not None,
+                "follow_up_at": follow_up.due_at.isoformat() if follow_up else None,
             }
 
     return record_dual_risk
