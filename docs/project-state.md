@@ -962,3 +962,43 @@ WHO-5 五项身心健康指数是**免版税**的（世界卫生组织，署名�
 
 八、顺手修的：`CaseGraphSection` 从 11-01 起只有测试、从未挂到任何界面——
 这次接进心理页时才发现。教训：**写完组件要问「谁渲染它」**，测试能过不代表用户看得见。
+
+### 2026-11-07（三）：截图不再靠手画，HFS-II 的中文条目也有了线索
+
+**真渲染截图（工程债，补完）**
+
+之前给心理页与记录页的「示意图」是 PIL 画出来的，数字与文案都得手抄，改一次界面就要重画一次。
+这一版换成了真渲染：`react-native-web` + `esbuild` 把 `MindScreen` / `RecordScreen` 这两个真实组件
+渲成网页，headless Chrome 截长图。
+
+- 管线在 `D:\deepseek-harness\deploy\web-preview\`（独立 scratch 工程，**不进产品仓**，产品代码一行没改）。
+  跑法与七个坑写在同目录 `README.md`。
+- 产物：`reports/assets/preview-real-screens.png`（心理页 + 记录页并排）、`preview-mind-real.png`
+  （心理页整页：双风险三行、只读图卡、沟通方式七题 + Gold、WHO-5 五句）、`preview-records-real.png`
+  （记录页「运动」：等宽页签、补录表单、手环卡）。
+- 三个坑值得记：①**Edge 的 headless 在这台机器上是坏的**（renderer 起不来，连 probe 页都 30 秒被杀），
+  换 Chrome 一次通过；②`react-native-web` 会把 `react` 拉到 19.3.1，而 `react-dom` 停在 19.1.0 时报
+  `Minified React error #527`，两个必须同版本；③esbuild 把 CJS 转 ESM 时只拷贝自有可枚举键，
+  所以 stub 掉的 Expo 模块**必须显式列出命名导出**，纯 Proxy 会让 `requireOptionalNativeModule`
+  变成 undefined——这类错误只在运行时出现，类型检查拦不住。
+- 夹具（血糖读数、双风险、图节点、手环数字）是编的；文案、排版、层级是客户端真实的样子。
+
+**HFS-II：拿到了中文条目线索，但没有拿到授权**
+
+用户提供了两条线索：问卷星 `https://www.wjx.cn/vm/QuA9mzI.aspx`（一份带人口学与临床信息的
+HFS-2 调查）与百度文库同款转载。
+
+- 读下来能确认的结构：行为量表 15 条、忧虑量表 18 条、每条 0–100 刻度、回忆期 6 个月；
+  附带「近 6 个月有无症状性 / 无症状性 / 严重低血糖」三道题与预防、处理能力的 1–5 自评。
+- **但这两份都不是授权**：HFS-II 题目有版权，中文译本另有翻译权；问卷作者不是版权方，文库那份是
+  转载。因此照抄进产品、或对外宣称「HFS-II 中文版」，仍然不行。
+- 已写 `antang/docs/research/hfs2-structure-and-licensing.md`：结构事实、与我们自编 6+1 题的
+  覆盖差异、换过去的代价（33 条 × 0–100 与低打扰设计的冲突、切点失效、历史分数要按 `instrument`
+  分段）、授权问询要点。**只记结构与类别，不抄条目原文**。
+- 顺带确认了一件对设计有用的事：那份问卷把「无症状性低血糖」单独问了一遍，与我们的 `silent`
+  双风险通道是同一件事——这条路不依赖量表授权，可以继续做。
+
+**gitee 镜像（仍阻塞）**
+
+2026-11-07 再试一次：没有凭据（`GCM_INTERACTIVE=never` + `git credential fill` 退出 128），
+匿名 fetch 正常、push 无门。三条可选路径写在 `next-steps` 第四节，等用户给令牌或手动登录。
