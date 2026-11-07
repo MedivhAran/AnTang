@@ -40,43 +40,7 @@ import { GlucoseReportDetail } from "../glucose/report-detail";
 import { GlucoseTargetSheet } from "../glucose/target-sheet";
 import { openOriginalReport } from "../glucose/open-original";
 import { measuredTimeLabel } from "../glucose/measured-time";
-import Svg, { Circle, Line, Path, Polyline, Rect } from "react-native-svg";
-
-/**
- * 五个分类各给一个小图标。
- *
- * 全部自绘而不是引图标库：这五个形状简单，自绘能保证未选中时线条也清楚，
- * 也省得为一排 chip 去多认一套图标命名。
- */
-function RecordTabIcon({ tab, active }: { tab: RecordTabKey; active: boolean }) {
-  const stroke = active ? colors.paper : colors.muted;
-  const line = {
-    fill: "none" as const,
-    stroke,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    strokeWidth: 1.6,
-  };
-  return (
-    <Svg height={15} viewBox="0 0 24 24" width={15}>
-      {tab === "glucose" ? (
-        <Path d="M12 3.5c2.9 4.4 5.6 7.5 5.6 10.3a5.6 5.6 0 1 1-11.2 0C6.4 11 9.1 7.9 12 3.5Z" {...line} />
-      ) : null}
-      {tab === "meals" ? (
-        <Path d="M4 12.5h16a8 8 0 0 1-16 0Zm8-8.5v3" {...line} />
-      ) : null}
-      {tab === "medication" ? (
-        <Path d="M8.5 8.5h7a3.75 3.75 0 0 1 0 7.5h-7a3.75 3.75 0 0 1 0-7.5Zm.5 0 6 7.5" {...line} />
-      ) : null}
-      {tab === "activity" ? (
-        <Path d="M4 18h8.5l3.5-2 4 2v1H4Zm2-8 3.5-3 3 2.5-4 3.5" {...line} />
-      ) : null}
-      {tab === "sleep" ? (
-        <Path d="M20 14.5A8 8 0 1 1 9.5 4a6.6 6.6 0 0 0 10.5 10.5Z" {...line} />
-      ) : null}
-    </Svg>
-  );
-}
+import Svg, { Circle, Line, Polyline, Rect } from "react-native-svg";
 
 export type RecordTabKey = "glucose" | "meals" | "medication" | "activity" | "sleep";
 
@@ -915,7 +879,8 @@ export function RecordScreen({
         <Text style={styles.headerHint}>最近 7 天</Text>
       </View>
 
-      {/* 五个分类芯片：不横向滚动，放不下就换行——横向滚动会把「睡眠」切掉半个。 */}
+      {/* 五个分类是五块并列的页，不是五个筛选条件：五个字并排等宽，
+          选中靠底下一条短线，不留胶囊底色——胶囊一多，上面就成了一堵墙。 */}
       <View style={styles.tabRow}>
         {RECORD_TABS.map((item) => {
           const selected = item.key === tab;
@@ -926,12 +891,12 @@ export function RecordScreen({
               accessibilityState={{ selected }}
               accessibilityLabel={`${item.label}分类`}
               onPress={() => setTab(item.key)}
-              style={[styles.tab, selected ? styles.tabActive : null]}
+              style={styles.tab}
             >
-              <RecordTabIcon active={selected} tab={item.key} />
               <Text style={[styles.tabText, selected ? styles.tabTextActive : null]}>
                 {item.label}
               </Text>
+              <View style={[styles.tabUnderline, selected ? styles.tabUnderlineActive : null]} />
             </Pressable>
           );
         })}
@@ -1466,6 +1431,7 @@ export function RecordScreen({
 
             <View style={styles.form}>
               <Text style={styles.formTitle}>补记一次运动</Text>
+              <Text style={styles.formCaption}>做了什么</Text>
               <View style={styles.chipRow}>
                 {(Object.keys(ACTIVITY_KIND_LABELS) as ActivityKind[]).map((key) => (
                   <Pressable
@@ -1486,6 +1452,7 @@ export function RecordScreen({
                   </Pressable>
                 ))}
               </View>
+              <Text style={styles.formCaption}>多久、多用力</Text>
               <View style={styles.chipRow}>
                 <TextInput
                   accessibilityLabel="运动时长（分钟）"
@@ -1497,29 +1464,32 @@ export function RecordScreen({
                   style={[styles.input, styles.inputNarrow]}
                   maxLength={3}
                 />
-                {(Object.keys(ACTIVITY_INTENSITY_LABELS) as ActivityIntensity[]).map(
-                  (key) => (
-                    <Pressable
-                      key={key}
-                      accessibilityRole="button"
-                      accessibilityLabel={`运动强度${ACTIVITY_INTENSITY_LABELS[key]}`}
-                      onPress={() => setActivityIntensity(key)}
-                      style={[
-                        styles.chip,
-                        activityIntensity === key ? styles.chipActive : null,
-                      ]}
-                    >
-                      <Text
+                <View style={[styles.segment, styles.segmentInline]}>
+                  {(Object.keys(ACTIVITY_INTENSITY_LABELS) as ActivityIntensity[]).map(
+                    (key) => (
+                      <Pressable
+                        key={key}
+                        accessibilityRole="button"
+                        accessibilityLabel={`运动强度${ACTIVITY_INTENSITY_LABELS[key]}`}
+                        accessibilityState={{ selected: activityIntensity === key }}
+                        onPress={() => setActivityIntensity(key)}
                         style={[
-                          styles.chipText,
-                          activityIntensity === key ? styles.chipTextActive : null,
+                          styles.segmentItem,
+                          activityIntensity === key ? styles.segmentItemActive : null,
                         ]}
                       >
-                        {ACTIVITY_INTENSITY_LABELS[key]}
-                      </Text>
-                    </Pressable>
-                  ),
-                )}
+                        <Text
+                          style={[
+                            styles.segmentText,
+                            activityIntensity === key ? styles.segmentTextActive : null,
+                          ]}
+                        >
+                          {ACTIVITY_INTENSITY_LABELS[key]}
+                        </Text>
+                      </Pressable>
+                    ),
+                  )}
+                </View>
               </View>
               <EventTimeField
                 accessibilityLabel="这次运动是什么时候"
@@ -1707,30 +1677,33 @@ const styles = StyleSheet.create({
   },
   tabRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingTop: 2,
+    paddingHorizontal: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line,
   },
   tab: {
-    flexDirection: "row",
+    flex: 1,
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radii.pill,
-    backgroundColor: colors.paperMuted,
+    gap: 6,
+    paddingTop: 6,
+    paddingBottom: 8,
   },
-  tabActive: {
+  tabUnderline: {
+    width: 18,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: "transparent",
+  },
+  tabUnderlineActive: {
     backgroundColor: colors.primary,
   },
   tabText: {
     color: colors.muted,
     fontFamily: typefaces.sans,
-    fontSize: 12,
+    fontSize: 13,
   },
   tabTextActive: {
-    color: "#FFFFFF",
+    color: colors.ink,
     fontFamily: typefaces.sansMedium,
     fontWeight: "600",
   },
@@ -1959,6 +1932,12 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     lineHeight: 17,
   },
+  formCaption: {
+    color: colors.faint,
+    fontFamily: typefaces.sans,
+    fontSize: 11.5,
+    letterSpacing: 0.3,
+  },
   chipRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1966,23 +1945,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   chip: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: radii.pill,
-    backgroundColor: colors.paperMuted,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    backgroundColor: "transparent",
   },
   chipActive: {
+    borderColor: colors.primary,
     backgroundColor: colors.primarySoft,
   },
   chipText: {
     color: colors.muted,
     fontFamily: typefaces.sans,
-    fontSize: 12,
+    fontSize: 12.5,
   },
   chipTextActive: {
     color: colors.primaryPressed,
     fontFamily: typefaces.sansMedium,
     fontWeight: "600",
+  },
+  segmentInline: {
+    flex: 1,
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
