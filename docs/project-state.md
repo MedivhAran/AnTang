@@ -1002,3 +1002,19 @@ HFS-2 调查）与百度文库同款转载。
 
 2026-11-07 再试一次：没有凭据（`GCM_INTERACTIVE=never` + `git credential fill` 退出 128），
 匿名 fetch 正常、push 无门。三条可选路径写在 `next-steps` 第四节，等用户给令牌或手动登录。
+
+### 2026-11-08：给长期 5～6 个人用做准备（运维侧，未改产品代码）
+
+课题组长期只有五六个自己人用，不会上量，所以这一版不动功能，只把「撑得住、清得干净」补齐。
+
+**一、API 从 1 个 worker 改成 2 个。** 原来镜像默认 `uvicorn --workers 1`，4 核机器只用了一核；解析报告 PDF 这类 CPU 活一跑，所有请求一起卡。现在写在 `compose.server.yaml` 里覆盖 `command`，并把 `alembic upgrade head` 一并带上（覆盖 command 会盖掉镜像里的迁移步骤）。同时给各服务写了内存上限：api 1G、proactive-care-worker 512M、postgres 1G、hindsight 2G、hindsight-postgres 512M、local-embeddings 3G——上限不是预留，只是防止某个服务把整机拖进 OOM。
+
+**二、发现并清理了真正的大头：LangGraph checkpoint。** 数据库原来 2.5G，其中 `checkpoint_blobs` 1.8G、`checkpoint_writes` 514M。原因是每次运行都会把整条消息历史写一遍快照，而 `thread_id` 就是 `agent_run` 的 id——每轮对话开一个新 thread，**从不跨轮复用**，所以这些行只在那一轮流式回放时有用，历史对话的继续靠的是 `messages` 表。
+
+清理办法：按 `checkpoint_id`（UUIDv6，前 60 位是 100ns 时间戳）算出 7 天前的阈值，把「最后一次写入早于阈值」的 thread 从三张表里一起删掉，再 `VACUUM FULL`。结果：**数据库 2544 MB → 210 MB**。装成 `antang-prune-checkpoints.timer`，每周日 03:30 跑一次。
+
+**三、备份体积跟着降下来。** 同一条备份链路（`pg_dump | gzip -9 | gpg`），清理前每份 2.1G、清理后 **62M**（约 34 倍）。用 `pg_restore -l` 验证过新备份的表清单可读。旧的几份大备份只留了清理前最后一份（11-07）作为回退，其余删除。
+
+**四、磁盘。** 从 73G/118G 降到 **43G/118G（剩 71G）**：删了 10 份过期备份、把 85 个镜像清到 30 个、清掉构建缓存；部署脚本 `deploy_overlay.sh` 在健康检查通过后加了一句 `docker image prune -f`，以后每次部署不再堆积。
+
+**容量判断（给「真实用户」的问题一个口径）**：五六个自己人用，这套现在绰绰有余（内存占用约 2.6G / 7.4G）；真到 30 人日活，把 worker 提到 4 就行；上百人日活时，先撞的是图片上传带宽和上游模型配额，不是这台机器的 CPU。
