@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:1
 
-FROM ghcr.io/astral-sh/uv:0.11.19 AS uv
 FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -8,7 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
-COPY --from=uv /uv /uvx /bin/
+# uv 从 PyPI 装：ghcr.io 的镜像在国内构建机上经常拉不下来（2026-11-12 连续
+# 超时），而 PyPI 有国内源，装出来的版本一样。
+RUN pip install --no-cache-dir uv==0.11.19
 
 RUN groupadd --system antang \
     && useradd --system --gid antang --home-dir /app antang \

@@ -1,10 +1,53 @@
+from collections.abc import AsyncIterator
+from typing import Any
+
+from langchain_core.messages import AIMessageChunk, BaseMessageChunk
 from langchain_openai import ChatOpenAI
 
 from antang_api.settings import settings
 
+EMPTY_STREAM_ATTEMPTS = 3
+"""上游偶尔回一个空的流（没文字、没工具调用）。多试两次，别让患者看到「回复失败」。"""
+
+
+class ResilientChatOpenAI(ChatOpenAI):
+    """把「空的流」当成一次没发生过的调用。
+
+    中转站（pro.gemai.cc）会随机返回只有一个空分片的流：`choices: []` 加
+    `[DONE]`，模型一个字都没说。这种情况下上游没有任何副作用，重放同一请求是
+    安全的——工具调用、写库这些副作用发生在 Agent 层，不在模型调用里。
+
+    成功（有文字或工具调用）时把攒下的分片原样吐出去，所以调用方看到的仍是
+    一个正常的流，只是这一次多等了几秒。
+    """
+
+    async def astream(  # type: ignore[override]
+        self,
+        input: Any,
+        config: Any = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[BaseMessageChunk]:
+        for attempt in range(EMPTY_STREAM_ATTEMPTS):
+            collected: list[BaseMessageChunk] = []
+            text_length = 0
+            has_tool_call = False
+
+            async for chunk in super().astream(input, config=config, **kwargs):
+                collected.append(chunk)
+                if isinstance(chunk, AIMessageChunk):
+                    if chunk.text:
+                        text_length += len(chunk.text)
+                    if chunk.tool_calls:
+                        has_tool_call = True
+
+            if text_length or has_tool_call or attempt == EMPTY_STREAM_ATTEMPTS - 1:
+                for chunk in collected:
+                    yield chunk
+                return
+
 
 def _build_model(*, streaming: bool, model_name: str | None = None) -> ChatOpenAI:
-    return ChatOpenAI(
+    return ResilientChatOpenAI(
         model=model_name or settings.hachimi_model_name,
         api_key=settings.hachimi_api_key,
         base_url=settings.hachimi_openai_base_url,

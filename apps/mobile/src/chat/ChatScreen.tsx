@@ -145,10 +145,13 @@ export function medicalFootnote(text: string): string | null {
 /**
  * 隔了这么久再说话就算另一次对话（和后端 `SESSION_GAP` 一致）：离开几小时
  * 回来，不该接着上一次那一段，也不该把历史全堆在一条里。
+ *
+ * 界面这边不再用它决定「打开哪一段」——回来先看到上次聊到哪儿，比看到一张
+ * 白纸更接近「接着聊」的意思。新建会话由后端按同一条间隔规则切分。
  */
 export const SESSION_GAP_MS = 6 * 3_600_000;
 
-function staleSession(value: string | null): boolean {
+export function staleSession(value: string | null): boolean {
   if (value === null) return false;
   const at = new Date(value).getTime();
   if (Number.isNaN(at)) return false;
@@ -248,6 +251,9 @@ function ChatScreenContent({
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const streamController = useRef<AbortController | null>(null);
   const nearEnd = useRef(true);
+  // 一次性「跳到最底」：进会话、换会话、点「有一条新消息」时置位，等列表量好高度再跳。
+  // 挂载时列表还是空的，直接 scrollToEnd 什么也滚不动，所以必须等 onContentSizeChange。
+  const jumpToEnd = useRef(true);
   const knownMessageIds = useMemo(
     () => new Set(state.messages.map((message) => message.id)),
     [state.messages],
@@ -377,14 +383,12 @@ function ChatScreenContent({
     void (async () => {
       try {
         const existing = await api.getConversations();
-        const newest = existing[0];
+        // 打开 App 就直接落到最近这段有内容的对话上：患者回来是想接着上次说，
+        // 不该先看到一张白纸再去侧边栏里找。空对话（点过但没发消息）跳过。
+        const newest = existing.find((conversation) => conversation.messageCount > 0);
         if (!active) return;
         setConversations(existing);
-        if (
-          newest === undefined ||
-          staleSession(newest.lastMessageAt ?? newest.createdAt)
-        ) {
-          // 上次聊天已经过去很久：从一段空白开始，旧对话留在侧边栏里可以回去看。
+        if (newest === undefined) {
           setConversationId(null);
           dispatch({
             type: 'history-replaced',
@@ -482,13 +486,18 @@ function ChatScreenContent({
 
   const lastMessage = state.messages[state.messages.length - 1];
   useEffect(() => {
+    // 流式回复时每个字都会让列表长高，跟着滚到底就行；但不要用 scrollToEnd 的动画去追
+    // 一个还在变的目标（追不上时会停在半路，看起来像跳回了上面）。真正的滚动交给
+    // FlatList 的 onContentSizeChange，等在布局完成后再跳一次。
     if (lastMessage === undefined) return;
-    if (!nearEnd.current && state.pendingRequestId === null) return;
-    const frame = requestAnimationFrame(() =>
-      listRef.current?.scrollToEnd({ animated: true }),
-    );
-    return () => cancelAnimationFrame(frame);
-  }, [lastMessage, state.activity, state.pendingRequestId]);
+    if (nearEnd.current) jumpToEnd.current = true;
+  }, [lastMessage, state.pendingRequestId]);
+
+  useEffect(() => {
+    // 换会话（含首次进入）一律从最底下看起。
+    nearEnd.current = true;
+    jumpToEnd.current = true;
+  }, [conversationId]);
 
   useEffect(() => {
     if (targetMessageId === null) return;
@@ -768,6 +777,14 @@ function ChatScreenContent({
                 key={item.id}
               />
             ))}
+            {assistant && message.proactiveReason !== null ? (
+              <Text
+                accessibilityLabel={`这次是我先开口：${message.proactiveReason}`}
+                style={styles.proactiveReason}
+              >
+                这次是我先开口 · {message.proactiveReason}
+              </Text>
+            ) : null}
             {showBubble ? (
               <View
                 style={[
@@ -902,6 +919,7 @@ function ChatScreenContent({
           accessibilityRole="button"
           onPress={() => {
             nearEnd.current = true;
+            jumpToEnd.current = true;
             setShowNewMessage(false);
             listRef.current?.scrollToEnd({ animated: true });
           }}
@@ -919,6 +937,7 @@ function ChatScreenContent({
         data={state.messages}
         keyboardShouldPersistTaps="handled"
         keyExtractor={(item) => item.id}
+        maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
         ListEmptyComponent={
           state.historyLoading ? (
             <View style={styles.emptyState}>
@@ -966,6 +985,14 @@ function ChatScreenContent({
           </View>
         }
         onRefresh={state.pendingRequestId === null ? refreshLatest : undefined}
+        onContentSizeChange={() => {
+          if (!jumpToEnd.current) return;
+          jumpToEnd.current = false;
+          // 流式过程中不要动画：目标高度还在变，动画会追不上、停在半路。
+          listRef.current?.scrollToEnd({
+            animated: state.pendingRequestId === null,
+          });
+        }}
         onScroll={({ nativeEvent }) => {
           const distanceFromEnd =
             nativeEvent.contentSize.height -
@@ -1555,6 +1582,14 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xs,
     borderRadius: 0,
     backgroundColor: 'transparent',
+  },
+  // 主动关怀那几条消息先说清「为什么是我先开口」，否则患者只能猜。
+  proactiveReason: {
+    marginBottom: spacing.xs,
+    marginLeft: spacing.xs,
+    color: colors.faint,
+    fontFamily: typefaces.sans,
+    fontSize: 10,
   },
   // 第一句话还没出来时先占一个位置，别让患者对着空白以为没发出去。
   thinkingRow: {
