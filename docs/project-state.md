@@ -1018,3 +1018,10 @@ HFS-2 调查）与百度文库同款转载。
 **四、磁盘。** 从 73G/118G 降到 **43G/118G（剩 71G）**：删了 10 份过期备份、把 85 个镜像清到 30 个、清掉构建缓存；部署脚本 `deploy_overlay.sh` 在健康检查通过后加了一句 `docker image prune -f`，以后每次部署不再堆积。
 
 **容量判断（给「真实用户」的问题一个口径）**：五六个自己人用，这套现在绰绰有余（内存占用约 2.6G / 7.4G）；真到 30 人日活，把 worker 提到 4 就行；上百人日活时，先撞的是图片上传带宽和上游模型配额，不是这台机器的 CPU。
+
+### 2026-11-12：打了一个覆盖最新功能的安装包，并给 akaa 造了一份演示数据
+
+- 版本 `26111201`（1.0.0），arm64-v8a，51,562,966 字节，sha256 `49862278712bccec58975348e8a52406d5530a4a2000ce9757cbe44d05f5ed4f`；签名证书仍是 `CN=Antang Xinyu, OU=GlucoMind`（与 `26102505` 同一把钥匙，可以直接覆盖安装）。下载页 `https://82.157.48.200:8000/download/antang-26111201.apk`，`latest.json` 与首页卡片同步。
+- 为什么不走 CI：`Qzwolf/AnTang` 的 Actions secrets 是空的，fork 只有 4 个 secret、缺 `google-services`；本机也没有 Expo 登录态，EAS 云构建走不通。所以这一版是**本机 Gradle 出包**：JDK 17 + SDK 36 + 本地 `gradle-9.3.1-bin.zip`（`gradlew.bat` 去 services.gradle.org 下载会卡死），签名参数写进 `android/gradle.properties` 的 `android.injected.signing.*`——走命令行 `-P` 会被 PowerShell 按路径拆坏。
+- 演示数据（`akaa`，脚本 `deploy/make_seed_akaa.py`）：20 条血糖（含今天 9:10–11:15 的六条密集读数、三个夜里的成对读数、250/65 两个极端值）、3 条双风险（58 没感觉 / 65 很怕 / 250 都感觉到）、4 条运动、3 段睡眠、5 个认知图节点与 3 条边、5 条恐惧行为、1 份沟通方式自评（含 WHO-5 五个答案）。主动关怀设置改成「每 3 天、9 点、每周上限 3、行为信号校准关闭」，这样打开 App 就能看到待发的关怀任务、双风险回访与行为痕迹。
+- 两个会静默回滚整笔事务的坑：`ck_graph_nodes_cognitive_has_no_intensity`（认知节点的 `intensity` 必须为 NULL）、睡眠段的 `woke_at` 不能按「入睡 + 时长」跨天推（直接写 ISO 时间）。
