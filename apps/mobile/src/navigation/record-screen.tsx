@@ -360,10 +360,12 @@ export function trendSeries(
  * 实心 = 自己量的，空心 = 报告里记下的。没有测量的时段留空，不插值。
  */
 function GlucoseTrend({
+  focusMs,
   now,
   readings,
   target,
 }: {
+  focusMs: number | null;
   now: number | null;
   readings: readonly GlucoseReading[];
   target: GlucoseTarget;
@@ -422,17 +424,23 @@ function GlucoseTrend({
           strokeLinejoin="round"
           strokeWidth={1.8}
         />
-        {points.map((point) => (
-          <Circle
-            cx={x(point.time)}
-            cy={y(point.value)}
-            fill={point.reported ? colors.paper : "#11866F"}
-            key={`${point.time}-${point.value}`}
-            r={point.reported ? 2.6 : 3}
-            stroke="#11866F"
-            strokeWidth={1.4}
-          />
-        ))}
+        {points.map((point) => {
+          // 从「血糖和你的感觉」点进来的那一条：在图上标成红点，否则患者只看到
+          // 一条线，还是不知道刚才点的是哪个数。
+          const focused =
+            focusMs !== null && Math.abs(point.time - focusMs) <= 60 * 1000;
+          return (
+            <Circle
+              cx={x(point.time)}
+              cy={y(point.value)}
+              fill={focused ? "#C0392B" : point.reported ? colors.paper : "#11866F"}
+              key={`${point.time}-${point.value}`}
+              r={focused ? 5 : point.reported ? 2.6 : 3}
+              stroke={focused ? "#FFFFFF" : "#11866F"}
+              strokeWidth={focused ? 2 : 1.4}
+            />
+          );
+        })}
       </Svg>
       <View style={styles.curveLegend}>
         <Text style={styles.cardHint}>
@@ -447,6 +455,9 @@ function GlucoseTrend({
       <Text style={styles.cardHint}>
         实心点是你自己量的，空心点是报告里记下的；没有测量的时段留空，不插值。
       </Text>
+      {focusMs === null ? null : (
+        <Text style={styles.cardHint}>红点就是这次打开的那一条。</Text>
+      )}
       {points.some((point) => point.approximate) ? (
         <Text style={styles.cardHint}>
           标成「大概」的点是只说得出时段的，横轴位置按该时段起点画，不代表那一刻。
@@ -691,6 +702,12 @@ export function RecordScreen({
   // 落到那天的那一条：多条时取最接近的。找不到就是 null，界面会直说「可能已经删掉了」。
   const focusedReadingId =
     focusedAt === null ? null : (nearestReading(readings, focusedAt)?.id ?? null);
+  const focusedReading =
+    focusedReadingId === null
+      ? null
+      : (readings.find((reading) => reading.id === focusedReadingId) ?? null);
+  const focusedMs =
+    focusedAt === null ? null : (Date.parse(focusedAt) || null);
   const cgmSampleStats =
     cgmSamples.length === 0
       ? null
@@ -972,9 +989,37 @@ export function RecordScreen({
               </View>
             )}
 
+            {/* 这一条先单独摆出来：图上一个红点，下面一张带框的卡片，
+                不用在列表里找。列表里就不再重复这一条。 */}
+            {focusedReading === null ? null : (
+              <View style={[styles.card, styles.cardFocused]}>
+                <Text style={styles.focusTag}>这一次</Text>
+                <Text style={styles.cardTitle}>{formatGlucose(focusedReading)}</Text>
+                <Text style={styles.cardBody}>
+                  测量{" "}
+                  {measuredTimeLabel(
+                    focusedReading.measuredAt,
+                    focusedReading.measuredPrecision,
+                  )}{" "}
+                  · {SOURCE_LABELS[focusedReading.source] ?? "手动"} ·{" "}
+                  {GLUCOSE_CONTEXT_LABELS[focusedReading.context] ??
+                    focusedReading.context}
+                  {focusedReading.note === null ? "" : ` ·「${focusedReading.note}」`}
+                </Text>
+                <Text style={styles.cardHint}>
+                  {recordedLine(focusedReading.measuredAt, focusedReading.createdAt)}
+                </Text>
+              </View>
+            )}
+
             {/* 两个子栏共用一张趋势图：手输的点、报告里的点都在这条线上，
                 切到哪一栏都看得见自己最近的高低起伏。 */}
-            <GlucoseTrend now={trendNow} readings={readings} target={target} />
+            <GlucoseTrend
+              focusMs={focusedMs}
+              now={trendNow}
+              readings={readings}
+              target={target}
+            />
 
             {/* 目标范围是医生给的数字，患者自己能改；绿带与统计都按它算。 */}
             <Pressable
@@ -1014,31 +1059,32 @@ export function RecordScreen({
                     </Text>
                   </View>
                 ) : null}
-                {manualReadings.map((reading) => (
-                  <View
-                    key={reading.id}
-                    style={[
-                      styles.card,
-                      reading.id === focusedReadingId ? styles.cardFocused : null,
-                    ]}
-                  >
-                    <Text style={styles.cardTitle}>{formatGlucose(reading)}</Text>
-                    <Text style={styles.cardBody}>
-                       测量{" "}
-                       {measuredTimeLabel(
-                         reading.measuredAt,
-                         reading.measuredPrecision,
-                       )}{" "}
-                       ·{" "}
-                      {SOURCE_LABELS[reading.source] ?? "手动"} ·{" "}
-                      {GLUCOSE_CONTEXT_LABELS[reading.context] ?? reading.context}
-                      {reading.note === null ? "" : ` ·「${reading.note}」`}
-                    </Text>
-                    <Text style={styles.cardHint}>
-                      {recordedLine(reading.measuredAt, reading.createdAt)}
-                    </Text>
-                  </View>
-                ))}
+                {manualReadings
+                  .filter((reading) => reading.id !== focusedReadingId)
+                  .map((reading) => (
+                    <View
+                      key={reading.id}
+                      style={[
+                        styles.card,
+                        reading.id === focusedReadingId ? styles.cardFocused : null,
+                      ]}
+                    >
+                      <Text style={styles.cardTitle}>{formatGlucose(reading)}</Text>
+                      <Text style={styles.cardBody}>
+                        测量{" "}
+                        {measuredTimeLabel(
+                          reading.measuredAt,
+                          reading.measuredPrecision,
+                        )}{" "}
+                        · {SOURCE_LABELS[reading.source] ?? "手动"} ·{" "}
+                        {GLUCOSE_CONTEXT_LABELS[reading.context] ?? reading.context}
+                        {reading.note === null ? "" : ` ·「${reading.note}」`}
+                      </Text>
+                      <Text style={styles.cardHint}>
+                        {recordedLine(reading.measuredAt, reading.createdAt)}
+                      </Text>
+                    </View>
+                  ))}
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="记一条血糖"
@@ -1087,7 +1133,10 @@ export function RecordScreen({
                     <Text style={styles.cardAction}>看全部指标</Text>
                   </Pressable>
                 ))}
-                {reportReadings.slice(0, 5).map((reading) => (
+                {reportReadings
+                  .filter((reading) => reading.id !== focusedReadingId)
+                  .slice(0, 5)
+                  .map((reading) => (
                   <View
                     key={reading.id}
                     style={[
@@ -1904,6 +1953,18 @@ const styles = StyleSheet.create({
   cardFocused: {
     borderColor: colors.primary,
     borderWidth: 1.5,
+  },
+  focusTag: {
+    alignSelf: "flex-start",
+    backgroundColor: colors.primarySoft,
+    borderRadius: 999,
+    color: colors.primary,
+    fontFamily: typefaces.sansMedium,
+    fontSize: 10,
+    marginBottom: spacing.xs,
+    overflow: "hidden",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
   },
   linkDanger: {
     color: colors.danger,

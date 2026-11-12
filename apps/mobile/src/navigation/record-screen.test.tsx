@@ -559,6 +559,14 @@ describe("record focus", () => {
     const api = fakeApi({
       getGlucoseReadings: jest.fn(async () => [
         { ...READING, measuredAt: focusAt, createdAt: focusAt },
+        {
+          ...READING,
+          id: "00000000-0000-0000-0000-000000000002",
+          valueMgDl: 110,
+          measuredAt: new Date(Date.parse(focusAt) + 2 * 3600 * 1000).toISOString(),
+          createdAt: new Date(Date.parse(focusAt) + 2 * 3600 * 1000).toISOString(),
+          note: null,
+        },
       ]),
     });
     const tree = await mount(api, {}, { at: focusAt, id: 1 });
@@ -567,6 +575,31 @@ describe("record focus", () => {
     const text = JSON.stringify(tree.toJSON());
     expect(text).toContain("那次的记录");
     expect(text).toContain("取消定位");
+    // 这一条单独摆在最上面，并标明「这一次」；列表里不再重复。
+    expect(text).toContain("这一次");
+    expect(text.split('"5.5 mmol/L"').length - 1).toBe(1);
+  });
+
+  it("marks that reading on the seven-day chart", async () => {
+    const focusAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+    const later = new Date(Date.parse(focusAt) + 2 * 3600 * 1000).toISOString();
+    const api = fakeApi({
+      getGlucoseReadings: jest.fn(async () => [
+        { ...READING, measuredAt: focusAt, createdAt: focusAt },
+        {
+          ...READING,
+          id: "00000000-0000-0000-0000-000000000002",
+          valueMgDl: 110,
+          measuredAt: later,
+          createdAt: later,
+          note: null,
+        },
+      ]),
+    });
+    const tree = await mount(api, {}, { at: focusAt, id: 1 });
+
+    const text = JSON.stringify(tree.toJSON());
+    expect(text).toContain("红点就是这次打开的那一条");
   });
 
   it("does not pretend to find a reading that is gone", async () => {

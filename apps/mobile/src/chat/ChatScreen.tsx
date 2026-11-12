@@ -145,10 +145,13 @@ export function medicalFootnote(text: string): string | null {
 /**
  * 隔了这么久再说话就算另一次对话（和后端 `SESSION_GAP` 一致）：离开几小时
  * 回来，不该接着上一次那一段，也不该把历史全堆在一条里。
+ *
+ * 界面这边不再用它决定「打开哪一段」——回来先看到上次聊到哪儿，比看到一张
+ * 白纸更接近「接着聊」的意思。新建会话由后端按同一条间隔规则切分。
  */
 export const SESSION_GAP_MS = 6 * 3_600_000;
 
-function staleSession(value: string | null): boolean {
+export function staleSession(value: string | null): boolean {
   if (value === null) return false;
   const at = new Date(value).getTime();
   if (Number.isNaN(at)) return false;
@@ -380,14 +383,12 @@ function ChatScreenContent({
     void (async () => {
       try {
         const existing = await api.getConversations();
-        const newest = existing[0];
+        // 打开 App 就直接落到最近这段有内容的对话上：患者回来是想接着上次说，
+        // 不该先看到一张白纸再去侧边栏里找。空对话（点过但没发消息）跳过。
+        const newest = existing.find((conversation) => conversation.messageCount > 0);
         if (!active) return;
         setConversations(existing);
-        if (
-          newest === undefined ||
-          staleSession(newest.lastMessageAt ?? newest.createdAt)
-        ) {
-          // 上次聊天已经过去很久：从一段空白开始，旧对话留在侧边栏里可以回去看。
+        if (newest === undefined) {
           setConversationId(null);
           dispatch({
             type: 'history-replaced',
