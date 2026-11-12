@@ -1025,3 +1025,31 @@ HFS-2 调查）与百度文库同款转载。
 - 为什么不走 CI：`Qzwolf/AnTang` 的 Actions secrets 是空的，fork 只有 4 个 secret、缺 `google-services`；本机也没有 Expo 登录态，EAS 云构建走不通。所以这一版是**本机 Gradle 出包**：JDK 17 + SDK 36 + 本地 `gradle-9.3.1-bin.zip`（`gradlew.bat` 去 services.gradle.org 下载会卡死），签名参数写进 `android/gradle.properties` 的 `android.injected.signing.*`——走命令行 `-P` 会被 PowerShell 按路径拆坏。
 - 演示数据（`akaa`，脚本 `deploy/make_seed_akaa.py`）：20 条血糖（含今天 9:10–11:15 的六条密集读数、三个夜里的成对读数、250/65 两个极端值）、3 条双风险（58 没感觉 / 65 很怕 / 250 都感觉到）、4 条运动、3 段睡眠、5 个认知图节点与 3 条边、5 条恐惧行为、1 份沟通方式自评（含 WHO-5 五个答案）。主动关怀设置改成「每 3 天、9 点、每周上限 3、行为信号校准关闭」，这样打开 App 就能看到待发的关怀任务、双风险回访与行为痕迹。
 - 两个会静默回滚整笔事务的坑：`ck_graph_nodes_cognitive_has_no_intensity`（认知节点的 `intensity` 必须为 NULL）、睡眠段的 `woke_at` 不能按「入睡 + 时长」跨天推（直接写 ISO 时间）。
+
+### 2026-11-12（二）：空的流不再等于「回复失败」
+
+患者看到的那句「回复失败」，根因不在 Agent，也不在提示词：中转站会随机回一个
+空流——只有一个 `choices: []` 的分片加 `[DONE]`，模型一个字都没说。日志里
+`chat_run_failed ... RuntimeError` 全是「Core Agent 返回了空回答」，而同一句
+话换个时间再问就正常。实测两个模型都会这样：`gemini-3.8-flash` 六次里空一次，
+`deepseek-v4-pro` 六次里空两次，所以换模型不是解法。
+
+改法是把「空的流」当成一次没发生的调用：
+
+- `api/src/antang_api/llm.py` 里 `ResilientChatOpenAI.astream` 把一次调用的分片
+  先攒起来。没有文字、也没有工具调用，就重放同一请求，最多三次；成功时把攒下
+  的分片原样吐出去，调用方看到的仍是一个正常的流，只是这次多等几秒。
+- 为什么敢重放：工具调用、写库这些副作用发生在 Agent 层，不在模型调用里；
+  一次空回复没有留下任何东西。
+- 为什么不在 Agent 层重试：那会重放整轮，包括已经执行过的工具（记血糖、写承诺
+  都有副作用）。模型调用层重试的边界最干净。
+
+`api/tests/test_llm_resilience.py` 三例钉住：空一次会再问一次并吐出新内容、连续
+三次空就放弃、只有工具调用也算有回答（不重试）。
+
+顺手把 `api/Dockerfile` 的 uv 换成 `pip install uv==0.11.19`：`ghcr.io` 的 uv 镜像
+在这台构建机上连续拉取超时，导致部署卡在 `toomanyrequests`。功能一样，PyPI 能拉
+得动。
+
+线上：镜像 `antang-api:deploy-20261112-235142`，`/health` 正常；同一个探针在容器里
+连跑十二次，空回复零次（改之前十二次里三次）。
